@@ -60,13 +60,13 @@ async function generateFrenchArticle(article) {
     return null;
   }
 
-  const prompt = `${config.ARTICLE_PROMPT} ${article.title}\n\n${article.description}\n\nImportant: Output the article as raw markdown without any additional formatting or code blocks. Do not include any text before or after the article content.`;
+  const prompt = `${config.ARTICLE_PROMPT} ${article.title}\n\n${article.description}\n\nImportant : Produire l'article en markdown brut sans aucun formatage supplémentaire ni blocs de code. Ne pas inclure de texte avant ou après le contenu de l'article.`;
 
   try {
     const completion = await openai.chat.completions.create({
       model: config.OPENAI_MODEL,
       messages: [
-        { role: "system", content: "You are a professional AI and technology journalist writing in French." },
+        { role: "system", content: "Vous êtes un journaliste professionnel spécialisé en intelligence artificielle et technologie, écrivant en français." },
         { role: "user", content: prompt }
       ],
       temperature: 0.7, // Add some creativity but keep it professional
