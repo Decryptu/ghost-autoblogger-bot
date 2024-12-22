@@ -10,6 +10,7 @@ Important :
 - Ne pas mettre de formatage gras dans les titres
 - Ne pas utiliser les termes "nous", "je" ou "révolution"
 - Écrire en français d'un point de vue journalistique objectif
+- Reformule tout librement pour ne pas faire un plagiat
 
 Voici l'actualité que tu dois traiter :`,
   CRON_SCHEDULE: '0 7,19 * * *',
