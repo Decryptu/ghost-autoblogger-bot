@@ -9,6 +9,9 @@ const fs = require('node:fs').promises;
 const path = require('node:path');
 const GhostAdminAPI = require('@tryghost/admin-api');
 
+// File path for processed articles
+const PROCESSED_ARTICLES_FILE = path.join(__dirname, 'processed_articles.json');
+
 // Initialize OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -27,7 +30,33 @@ const ghost = new GhostAdminAPI({
     version: 'v5.0'
 });
 
-// Keep track of processed articles
+// Function to load processed articles from JSON file
+async function loadProcessedArticles() {
+    try {
+        const exists = await fs.access(PROCESSED_ARTICLES_FILE).then(() => true).catch(() => false);
+        if (!exists) {
+            await fs.writeFile(PROCESSED_ARTICLES_FILE, JSON.stringify([]));
+            return new Set();
+        }
+        const data = await fs.readFile(PROCESSED_ARTICLES_FILE, 'utf-8');
+        return new Set(JSON.parse(data));
+    } catch (error) {
+        console.error('Error loading processed articles:', error.message);
+        return new Set();
+    }
+}
+
+// Function to save processed articles to JSON file
+async function saveProcessedArticles(articles) {
+    try {
+        const articlesArray = [...articles];
+        await fs.writeFile(PROCESSED_ARTICLES_FILE, JSON.stringify(articlesArray, null, 2));
+    } catch (error) {
+        console.error('Error saving processed articles:', error.message);
+    }
+}
+
+// Initialize processed articles from file
 let processedArticles = new Set();
 
 // Function to fetch AI news
@@ -144,70 +173,70 @@ async function getUnsplashImage(keyword) {
 
 // Function to publish to Ghost
 async function publishToGhost(title, content, imageUrl) {
-  try {
-      console.log('Publishing to Ghost with data:', {
-          title,
-          contentLength: content?.length,
-          imageUrl
-      });
+    try {
+        console.log('Publishing to Ghost with data:', {
+            title,
+            contentLength: content?.length,
+            imageUrl
+        });
 
-      // Convert markdown content to HTML
-      const htmlContent = content
-          .split('\n')
-          .map(line => {
-              const trimmedLine = line.trim();
-              if (trimmedLine === '') return '';
-              
-              // Handle headers (h2-h6 only, no h1)
-              if (trimmedLine.startsWith('#')) {
-                  const level = trimmedLine.match(/^#+/)[0].length;
-                  if (level === 1) return ''; // Skip h1 headers
-                  const text = trimmedLine.replace(/^#+\s/, '');
-                  // Remove any ** from headers as they're already bold
-                  const cleanText = text.replace(/\*\*/g, '');
-                  return `<h${level}>${cleanText}</h${level}>`;
-              }
+        // Convert markdown content to HTML
+        const htmlContent = content
+            .split('\n')
+            .map(line => {
+                const trimmedLine = line.trim();
+                if (trimmedLine === '') return '';
+                
+                // Handle headers (h2-h6 only, no h1)
+                if (trimmedLine.startsWith('#')) {
+                    const level = trimmedLine.match(/^#+/)[0].length;
+                    if (level === 1) return ''; // Skip h1 headers
+                    const text = trimmedLine.replace(/^#+\s/, '');
+                    // Remove any ** from headers as they're already bold
+                    const cleanText = text.replace(/\*\*/g, '');
+                    return `<h${level}>${cleanText}</h${level}>`;
+                }
 
-              // Handle italic (both * and _)
-              let processedLine = trimmedLine.replace(
-                  /([*_])(?:(?!\1)[^*_])*\1/g,
-                  match => `<em>${match.slice(1, -1)}</em>`
-              );
+                // Handle italic (both * and _)
+                let processedLine = trimmedLine.replace(
+                    /([*_])(?:(?!\1)[^*_])*\1/g,
+                    match => `<em>${match.slice(1, -1)}</em>`
+                );
 
-              // Handle bold
-              processedLine = processedLine.replace(
-                  /\*\*(?:(?!\*\*).)*\*\*/g,
-                  match => `<strong>${match.slice(2, -2)}</strong>`
-              );
+                // Handle bold
+                processedLine = processedLine.replace(
+                    /\*\*(?:(?!\*\*).)*\*\*/g,
+                    match => `<strong>${match.slice(2, -2)}</strong>`
+                );
 
-              // Wrap in paragraph if not empty
-              return trimmedLine ? `<p>${processedLine}</p>` : '';
-          })
-          .filter(Boolean)
-          .join('\n');
+                // Wrap in paragraph if not empty
+                return trimmedLine ? `<p>${processedLine}</p>` : '';
+            })
+            .filter(Boolean)
+            .join('\n');
 
-      const post = await ghost.posts.add(
-          {
-              title,
-              html: htmlContent,
-              feature_image: imageUrl,
-              status: 'published',
-              tags: [
-                  { name: 'intelligence-artificielle' },
-                  { name: 'technologie' },
-                  { name: 'actualite' }
-              ]
-          },
-          { source: 'html' }
-      );
+        const post = await ghost.posts.add(
+            {
+                title,
+                html: htmlContent,
+                feature_image: imageUrl,
+                status: 'published',
+                tags: [
+                    { name: 'actualite' },
+                    { name: 'technologie' },
+                    { name: 'intelligence-artificielle' }
+                ]
+            },
+            { source: 'html' }
+        );
 
-      console.log(`Article published successfully to Ghost: ${post.url}`);
-      return true;
-  } catch (error) {
-      console.error('Error publishing to Ghost:', error.message);
-      console.error('Error details:', error);
-      return false;
-  }
+        console.log(`Article published successfully to Ghost: ${post.url}`);
+        return true;
+    } catch (error) {
+        console.error('Error publishing to Ghost:', error.message);
+        console.error('Error details:', error);
+        return false;
+    }
 }
 
 // Function to save content locally
@@ -240,6 +269,9 @@ ${content}`;
 // Main function to run the bot
 async function runBot() {
   try {
+    // Load processed articles from file
+    processedArticles = await loadProcessedArticles();
+    
     const articles = await fetchAINews();
     if (articles.length === 0) return;
 
@@ -252,9 +284,11 @@ async function runBot() {
     const article = newArticles[0];
     processedArticles.add(article.title);
 
+    // Maintain size limit and save to file
     if (processedArticles.size > 1000) {
       processedArticles = new Set([...processedArticles].slice(-500));
     }
+    await saveProcessedArticles(processedArticles);
 
     console.log(`Processing article: ${article.title}`);
     
