@@ -35,21 +35,64 @@ async function fetchAINews() {
   try {
     const response = await axios.get('https://newsapi.org/v2/everything', {
       params: {
-        q: 'artificial intelligence',
+        q: '(artificial intelligence OR AI OR machine learning) AND (technology OR tech OR innovation)',
         language: 'en',
         sortBy: 'publishedAt',
+        pageSize: 10,
         apiKey: process.env.NEWS_API_KEY,
       },
     });
     
+    console.log(`Found ${response.data.articles?.length || 0} total articles`);
+
     if (!response.data.articles || response.data.articles.length === 0) {
       throw new Error('No articles found');
     }
     
-    return response.data.articles;
+    const filteredArticles = response.data.articles.filter(article => {
+      if (!article.title || !article.description) {
+        console.log(`Skipping article due to missing fields: ${article.title || 'Untitled'}`);
+        return false;
+      }
+
+      const aiKeywords = ['ai', 'artificial intelligence', 'machine learning', 'deep learning', 'neural network', 'chatgpt', 'openai'];
+      const content = `${article.title} ${article.description}`.toLowerCase();
+      
+      const isAIRelated = aiKeywords.some(keyword => content.includes(keyword));
+      if (!isAIRelated) {
+        console.log(`Skipping non-AI article: ${article.title}`);
+      }
+      return isAIRelated;
+    });
+
+    console.log(`Filtered down to ${filteredArticles.length} AI-related articles`);
+
+    if (filteredArticles.length === 0) {
+      throw new Error('No relevant AI articles found');
+    }
+
+    return filteredArticles;
   } catch (error) {
     console.error('Error fetching AI news:', error.message);
     return [];
+  }
+}
+
+// Function to translate title
+async function translateTitle(title) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: config.OPENAI_MODEL,
+      messages: [
+        { role: "system", content: "Vous êtes un traducteur professionnel qui traduit les titres en français." },
+        { role: "user", content: `Traduire ce titre en français : "${title}". Donnez uniquement la traduction, sans guillemets ni ponctuation supplémentaire.` }
+      ],
+      temperature: 0.3,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Error translating title:', error.message);
+    return title; // Fallback to original title
   }
 }
 
@@ -69,7 +112,7 @@ async function generateFrenchArticle(article) {
         { role: "system", content: "Vous êtes un journaliste professionnel spécialisé en intelligence artificielle et technologie, écrivant en français." },
         { role: "user", content: prompt }
       ],
-      temperature: 0.7, // Add some creativity but keep it professional
+      temperature: 0.7,
     });
     return completion.choices[0].message.content.trim();
   } catch (error) {
@@ -82,10 +125,10 @@ async function generateFrenchArticle(article) {
 async function getUnsplashImage(keyword) {
   try {
     const result = await unsplash.search.getPhotos({
-      query: keyword,
+      query: `${keyword} technology artificial intelligence`,
       page: 1,
       perPage: 1,
-      orientation: 'landscape', // Better for blog posts
+      orientation: 'landscape',
     });
 
     if (!result.response?.results?.[0]?.urls?.regular) {
@@ -95,45 +138,76 @@ async function getUnsplashImage(keyword) {
     return result.response.results[0].urls.regular;
   } catch (error) {
     console.error('Error fetching Unsplash image:', error.message);
-    // Return a default AI-related image URL as fallback
     return config.DEFAULT_IMAGE_URL;
   }
 }
 
 // Function to publish to Ghost
 async function publishToGhost(title, content, imageUrl) {
-    try {
-        // Prepare the post data
-        const postData = {
-            title: title,
-            // Convert markdown to HTML for Ghost
-            html: content,  // Changed from markdown to html since Ghost expects HTML content
-            feature_image: imageUrl,
-            status: 'published',
-            tags: [
-                {
-                    name: 'intelligence-artificielle'
-                },
-                {
-                    name: 'technologie'
-                },
-                {
-                    name: 'actualite'
-                }
-            ],
-            authors: [{
-                id: config.GHOST_AUTHOR_ID // Make sure to add this to your config.js
-            }]
-        };
+  try {
+      console.log('Publishing to Ghost with data:', {
+          title,
+          contentLength: content?.length,
+          imageUrl
+      });
 
-        const post = await ghost.posts.add(postData);
-        console.log(`Article published successfully to Ghost: ${post.url}`);
-        return true;
-    } catch (error) {
-        console.error('Error publishing to Ghost:', error.message);
-        console.error('Error details:', error);
-        return false;
-    }
+      // Convert markdown content to HTML
+      const htmlContent = content
+          .split('\n')
+          .map(line => {
+              const trimmedLine = line.trim();
+              if (trimmedLine === '') return '';
+              
+              // Handle headers (h2-h6 only, no h1)
+              if (trimmedLine.startsWith('#')) {
+                  const level = trimmedLine.match(/^#+/)[0].length;
+                  if (level === 1) return ''; // Skip h1 headers
+                  const text = trimmedLine.replace(/^#+\s/, '');
+                  // Remove any ** from headers as they're already bold
+                  const cleanText = text.replace(/\*\*/g, '');
+                  return `<h${level}>${cleanText}</h${level}>`;
+              }
+
+              // Handle italic (both * and _)
+              let processedLine = trimmedLine.replace(
+                  /([*_])(?:(?!\1)[^*_])*\1/g,
+                  match => `<em>${match.slice(1, -1)}</em>`
+              );
+
+              // Handle bold
+              processedLine = processedLine.replace(
+                  /\*\*(?:(?!\*\*).)*\*\*/g,
+                  match => `<strong>${match.slice(2, -2)}</strong>`
+              );
+
+              // Wrap in paragraph if not empty
+              return trimmedLine ? `<p>${processedLine}</p>` : '';
+          })
+          .filter(Boolean)
+          .join('\n');
+
+      const post = await ghost.posts.add(
+          {
+              title,
+              html: htmlContent,
+              feature_image: imageUrl,
+              status: 'published',
+              tags: [
+                  { name: 'intelligence-artificielle' },
+                  { name: 'technologie' },
+                  { name: 'actualite' }
+              ]
+          },
+          { source: 'html' }
+      );
+
+      console.log(`Article published successfully to Ghost: ${post.url}`);
+      return true;
+  } catch (error) {
+      console.error('Error publishing to Ghost:', error.message);
+      console.error('Error details:', error);
+      return false;
+  }
 }
 
 // Function to save content locally
@@ -169,36 +243,38 @@ async function runBot() {
     const articles = await fetchAINews();
     if (articles.length === 0) return;
 
-    // Filter out already processed articles
     const newArticles = articles.filter(article => !processedArticles.has(article.title));
     if (newArticles.length === 0) {
       console.log('No new articles to process');
       return;
     }
 
-    const article = newArticles[0]; // Choose the latest unprocessed article
+    const article = newArticles[0];
     processedArticles.add(article.title);
 
-    // Limit the size of processedArticles set
     if (processedArticles.size > 1000) {
       processedArticles = new Set([...processedArticles].slice(-500));
     }
 
     console.log(`Processing article: ${article.title}`);
     
+    // First generate the content
     const frenchArticle = await generateFrenchArticle(article);
     if (!frenchArticle) return;
 
+    // Then translate the title
+    const frenchTitle = await translateTitle(article.title);
+    
     const imageUrl = await getUnsplashImage(article.title.split(' ').slice(0, 3).join(' '));
     
     // Save locally first
-    const saved = await saveContentLocally(article.title, frenchArticle, imageUrl);
+    const saved = await saveContentLocally(frenchTitle, frenchArticle, imageUrl);
     
     if (saved) {
       console.log('Article saved locally successfully');
       
       // Then publish to Ghost
-      const published = await publishToGhost(article.title, frenchArticle, imageUrl);
+      const published = await publishToGhost(frenchTitle, frenchArticle, imageUrl);
       
       if (published) {
         console.log('Article processing and publishing completed successfully');
