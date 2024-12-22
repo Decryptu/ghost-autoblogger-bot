@@ -7,6 +7,7 @@ const nodeFetch = require('node-fetch');
 const config = require('./config');
 const fs = require('node:fs').promises;
 const path = require('node:path');
+const GhostAdminAPI = require('@tryghost/admin-api');
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -17,6 +18,13 @@ const openai = new OpenAI({
 const unsplash = createApi({
   accessKey: process.env.UNSPLASH_ACCESS_KEY,
   fetch: nodeFetch,
+});
+
+// Initialize Ghost Admin API
+const ghost = new GhostAdminAPI({
+    url: process.env.GHOST_API_URL,
+    key: process.env.GHOST_ADMIN_API_KEY,
+    version: 'v5.0'
 });
 
 // Keep track of processed articles
@@ -92,6 +100,42 @@ async function getUnsplashImage(keyword) {
   }
 }
 
+// Function to publish to Ghost
+async function publishToGhost(title, content, imageUrl) {
+    try {
+        // Prepare the post data
+        const postData = {
+            title: title,
+            // Convert markdown to HTML for Ghost
+            html: content,  // Changed from markdown to html since Ghost expects HTML content
+            feature_image: imageUrl,
+            status: 'published',
+            tags: [
+                {
+                    name: 'intelligence-artificielle'
+                },
+                {
+                    name: 'technologie'
+                },
+                {
+                    name: 'actualite'
+                }
+            ],
+            authors: [{
+                id: config.GHOST_AUTHOR_ID // Make sure to add this to your config.js
+            }]
+        };
+
+        const post = await ghost.posts.add(postData);
+        console.log(`Article published successfully to Ghost: ${post.url}`);
+        return true;
+    } catch (error) {
+        console.error('Error publishing to Ghost:', error.message);
+        console.error('Error details:', error);
+        return false;
+    }
+}
+
 // Function to save content locally
 async function saveContentLocally(title, content, imageUrl) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -146,10 +190,21 @@ async function runBot() {
     if (!frenchArticle) return;
 
     const imageUrl = await getUnsplashImage(article.title.split(' ').slice(0, 3).join(' '));
+    
+    // Save locally first
     const saved = await saveContentLocally(article.title, frenchArticle, imageUrl);
     
     if (saved) {
-      console.log('Article processing completed successfully');
+      console.log('Article saved locally successfully');
+      
+      // Then publish to Ghost
+      const published = await publishToGhost(article.title, frenchArticle, imageUrl);
+      
+      if (published) {
+        console.log('Article processing and publishing completed successfully');
+      } else {
+        console.log('Article saved locally but failed to publish to Ghost');
+      }
     }
   } catch (error) {
     console.error('Error in runBot:', error.message);
