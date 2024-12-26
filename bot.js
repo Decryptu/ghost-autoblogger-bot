@@ -173,70 +173,83 @@ async function getUnsplashImage(keyword) {
 
 // Function to publish to Ghost
 async function publishToGhost(title, content, imageUrl) {
-    try {
-        console.log('Publishing to Ghost with data:', {
-            title,
-            contentLength: content?.length,
-            imageUrl
-        });
+  try {
+      console.log('Publishing to Ghost with data:', {
+          title,
+          contentLength: content?.length,
+          imageUrl
+      });
 
-        // Convert markdown content to HTML
-        const htmlContent = content
-            .split('\n')
-            .map(line => {
-                const trimmedLine = line.trim();
-                if (trimmedLine === '') return '';
-                
-                // Handle headers (h2-h6 only, no h1)
-                if (trimmedLine.startsWith('#')) {
-                    const level = trimmedLine.match(/^#+/)[0].length;
-                    if (level === 1) return ''; // Skip h1 headers
-                    const text = trimmedLine.replace(/^#+\s/, '');
-                    // Remove any ** from headers as they're already bold
-                    const cleanText = text.replace(/\*\*/g, '');
-                    return `<h${level}>${cleanText}</h${level}>`;
-                }
+      // First, get existing tags
+      const existingTags = await ghost.tags.browse();
+      
+      // Find the IDs of our required tags
+      const tagIds = [];
+      const tagNames = ['actualite', 'technologie', 'intelligence-artificielle'];
+      
+      for (const tagName of tagNames) {
+          const existingTag = existingTags.find(tag => tag.name === tagName || tag.slug === tagName);
+          if (existingTag) {
+              tagIds.push({id: existingTag.id});
+          } else {
+              // Only create new tag if it doesn't exist
+              tagIds.push({name: tagName});
+          }
+      }
 
-                // Handle italic (both * and _)
-                let processedLine = trimmedLine.replace(
-                    /([*_])(?:(?!\1)[^*_])*\1/g,
-                    match => `<em>${match.slice(1, -1)}</em>`
-                );
+      // Convert markdown content to HTML
+      const htmlContent = content
+          .split('\n')
+          .map(line => {
+              const trimmedLine = line.trim();
+              if (trimmedLine === '') return '';
+              
+              // Handle headers (h2-h6 only, no h1)
+              if (trimmedLine.startsWith('#')) {
+                  const level = trimmedLine.match(/^#+/)[0].length;
+                  if (level === 1) return ''; // Skip h1 headers
+                  const text = trimmedLine.replace(/^#+\s/, '');
+                  // Remove any ** from headers as they're already bold
+                  const cleanText = text.replace(/\*\*/g, '');
+                  return `<h${level}>${cleanText}</h${level}>`;
+              }
 
-                // Handle bold
-                processedLine = processedLine.replace(
-                    /\*\*(?:(?!\*\*).)*\*\*/g,
-                    match => `<strong>${match.slice(2, -2)}</strong>`
-                );
+              // Handle italic (both * and _)
+              let processedLine = trimmedLine.replace(
+                  /([*_])(?:(?!\1)[^*_])*\1/g,
+                  match => `<em>${match.slice(1, -1)}</em>`
+              );
 
-                // Wrap in paragraph if not empty
-                return trimmedLine ? `<p>${processedLine}</p>` : '';
-            })
-            .filter(Boolean)
-            .join('\n');
+              // Handle bold
+              processedLine = processedLine.replace(
+                  /\*\*(?:(?!\*\*).)*\*\*/g,
+                  match => `<strong>${match.slice(2, -2)}</strong>`
+              );
 
-        const post = await ghost.posts.add(
-            {
-                title,
-                html: htmlContent,
-                feature_image: imageUrl,
-                status: 'published',
-                tags: [
-                    { name: 'actualite' },
-                    { name: 'technologie' },
-                    { name: 'intelligence-artificielle' }
-                ]
-            },
-            { source: 'html' }
-        );
+              // Wrap in paragraph if not empty
+              return trimmedLine ? `<p>${processedLine}</p>` : '';
+          })
+          .filter(Boolean)
+          .join('\n');
 
-        console.log(`Article published successfully to Ghost: ${post.url}`);
-        return true;
-    } catch (error) {
-        console.error('Error publishing to Ghost:', error.message);
-        console.error('Error details:', error);
-        return false;
-    }
+      const post = await ghost.posts.add(
+          {
+              title,
+              html: htmlContent,
+              feature_image: imageUrl,
+              status: 'published',
+              tags: tagIds
+          },
+          { source: 'html' }
+      );
+
+      console.log(`Article published successfully to Ghost: ${post.url}`);
+      return true;
+  } catch (error) {
+      console.error('Error publishing to Ghost:', error.message);
+      console.error('Error details:', error);
+      return false;
+  }
 }
 
 // Function to save content locally
