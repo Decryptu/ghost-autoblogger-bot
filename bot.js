@@ -113,8 +113,8 @@ async function translateTitle(title) {
     const completion = await openai.chat.completions.create({
       model: config.OPENAI_MODEL,
       messages: [
-        { role: "system", content: "Vous êtes un traducteur professionnel qui traduit les titres en français." },
-        { role: "user", content: `Traduire ce titre en français : "${title}". Donnez uniquement la traduction, sans guillemets ni ponctuation supplémentaire.` }
+        { role: "system", content: "Vous êtes un traducteur professionnel qui traduit les titres en français et optimisé pour le SEO." },
+        { role: "user", content: `Traduire ce titre en français et l'optimiser pour le SEO sur un blog : "${title}". Donnez uniquement le nouveau titre, sans guillemets ni ponctuation supplémentaire.` }
       ],
       temperature: 0.3,
     });
@@ -153,18 +153,80 @@ async function generateFrenchArticle(article) {
 // Function to get an image from Unsplash
 async function getUnsplashImage(keyword) {
   try {
+    // Define possible colors for additional randomness
+    const colors = ['', 'blue', 'green', 'purple', 'red', 'orange'];
+    
+    // Randomly select search parameters
+    const orderBy = Math.random() < 0.5 ? 'latest' : 'relevant';
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const randomPage = Math.floor(Math.random() * 3) + 1; // Get a random page between 1-3
+    
+    // Alternative keywords to mix into the search
+    const alternativeKeywords = [
+      'future', 'digital', 'computer', 'robot', 'network', 'data',
+      'circuit', 'cyber', 'innovation', 'smart'
+    ];
+    
+    // Add 1-2 random alternative keywords to the search
+    const numExtraKeywords = Math.floor(Math.random() * 2) + 1;
+    const selectedKeywords = [];
+    for (let i = 0; i < numExtraKeywords; i++) {
+      const randomIndex = Math.floor(Math.random() * alternativeKeywords.length);
+      selectedKeywords.push(alternativeKeywords[randomIndex]);
+    }
+    
+    // Build the search query
+    const searchQuery = [
+      ...keyword.split(' ').slice(0, 2), // Take first two words from original keyword
+      ...selectedKeywords,
+      'technology'
+    ].join(' ');
+
+    // First attempt with random parameters
     const result = await unsplash.search.getPhotos({
-      query: `${keyword} technology artificial intelligence`,
-      page: 1,
-      perPage: 1,
+      query: searchQuery,
+      page: randomPage,
+      perPage: 15,
+      orderBy: orderBy,
       orientation: 'landscape',
+      color: randomColor || undefined
     });
 
-    if (!result.response?.results?.[0]?.urls?.regular) {
-      throw new Error('No image found');
+    if (!result.response?.results || result.response.results.length === 0) {
+      throw new Error('No images found with first attempt');
     }
 
-    return result.response.results[0].urls.regular;
+    // Get multiple random indices to try
+    const indices = Array.from({length: result.response.results.length}, (_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+
+    // Try each random index until we find a valid image
+    for (const index of indices) {
+      const image = result.response.results[index];
+      if (image?.urls?.regular) {
+        return image.urls.regular;
+      }
+    }
+
+    // If no image found with first attempt, try a fallback search
+    const fallbackResult = await unsplash.search.getPhotos({
+      query: 'technology artificial intelligence',
+      page: 1,
+      perPage: 30,
+      orientation: 'landscape'
+    });
+
+    if (!fallbackResult.response?.results?.[0]?.urls?.regular) {
+      throw new Error('No valid images found');
+    }
+
+    const randomFallbackIndex = Math.floor(Math.random() * 
+      Math.min(fallbackResult.response.results.length, 10));
+    return fallbackResult.response.results[randomFallbackIndex].urls.regular;
+
   } catch (error) {
     console.error('Error fetching Unsplash image:', error.message);
     return config.DEFAULT_IMAGE_URL;
