@@ -113,8 +113,8 @@ async function translateTitle(title) {
     const completion = await openai.chat.completions.create({
       model: config.OPENAI_MODEL,
       messages: [
-        { role: "system", content: "Vous êtes un traducteur professionnel qui traduit les titres en français et optimisé pour le SEO." },
-        { role: "user", content: `Traduire ce titre en français et l'optimiser pour le SEO sur un blog : "${title}". Donnez uniquement le nouveau titre, sans guillemets ni ponctuation supplémentaire.` }
+        { role: "system", content: "Vous êtes un rédacteur professionnel qui reformule les titres en français pour un journal tech en pensant toujours au SEO." },
+        { role: "user", content: `Reformuler ce titre en français sans plagier tout en pensant au SEO pour la headline d'un média tech : "${title}". Donnez uniquement le nouveau titre, sans guillemets ni ponctuation supplémentaire.` }
       ],
       temperature: 0.3,
     });
@@ -132,7 +132,7 @@ async function generateFrenchArticle(article) {
     return null;
   }
 
-  const prompt = `${config.ARTICLE_PROMPT} ${article.title}\n\n${article.description}\n\nImportant : Produire l'article en markdown brut sans aucun formatage supplémentaire ni blocs de code. Ne pas inclure de texte avant ou après le contenu de l'article.`;
+  const prompt = `${config.ARTICLE_PROMPT} ${article.title}\n\n${article.description}\n\nImportant : Produire l'article en markdown brut sans aucun formatage supplémentaire ni blocs de code, mais tu peux ajouter du gras, italique et citation. Ne pas inclure de texte avant ou après le contenu de l'article.`;
 
   try {
     const completion = await openai.chat.completions.create({
