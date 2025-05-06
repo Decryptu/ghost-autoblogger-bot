@@ -113,8 +113,8 @@ async function translateTitle(title) {
     const completion = await openai.chat.completions.create({
       model: config.OPENAI_MODEL,
       messages: [
-        { role: "system", content: "Vous êtes un rédacteur professionnel qui reformule les titres en français pour un journal tech en pensant toujours au SEO." },
-        { role: "user", content: `Reformuler ce titre en français sans plagier tout en pensant au SEO pour la headline d'un média tech : "${title}". Donnez uniquement le nouveau titre, sans guillemets ni ponctuation supplémentaire.` }
+        { role: "system", content: "Vous êtes un rédacteur professionnel qui reformule les titres en français pour un journal tech focus sur l'IA en pensant toujours au SEO." },
+        { role: "user", content: `Reformuler ce titre en français sans plagier tout en pensant au SEO pour la headline d'un média tech sur l'IA : "${title}". Donnez uniquement le nouveau titre, sans guillemets ni ponctuation supplémentaire.` }
       ],
       temperature: 0.3,
     });
