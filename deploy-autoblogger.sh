@@ -13,9 +13,11 @@ echo "==> $(date -Is) autoblogger deploy start"
 
 cd "$APP_DIR"
 
-echo "==> git fetch + pull"
+echo "==> git stash + fetch + pull"
+git stash --include-untracked
 git fetch --all --prune
 git pull --rebase
+git stash pop 2>/dev/null || true
 
 echo "==> install deps"
 bun install --frozen-lockfile
