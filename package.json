@@ -1,22 +1,22 @@
 {
   "name": "ghost-news-bot",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "news": "node src/index.js --news",
+    "guide": "node src/index.js --guide",
+    "test": "node src/index.js --run"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@tryghost/admin-api": "^1.13.13",
-    "@tryghost/content-api": "^1.11.22",
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
-    "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
-    "openai": "^4.97.0",
     "unsplash-js": "^7.0.19"
   }
 }
