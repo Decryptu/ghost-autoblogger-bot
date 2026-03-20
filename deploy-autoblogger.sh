@@ -13,14 +13,14 @@ echo "==> $(date -Is) autoblogger deploy start"
 
 cd "$APP_DIR"
 
-echo "==> git stash + fetch + pull"
-git stash --include-untracked
+echo "==> git reset + fetch + pull"
+git checkout -- .
+git clean -fd
 git fetch --all --prune
 git pull --rebase
-git stash pop 2>/dev/null || true
 
 echo "==> install deps"
-bun install --frozen-lockfile
+bun install
 
 echo "==> restart PM2"
 if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
