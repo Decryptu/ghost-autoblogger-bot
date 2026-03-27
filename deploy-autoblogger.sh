@@ -3,7 +3,6 @@ set -euo pipefail
 
 APP_DIR="/home/decrypt/ghost-autoblogger-bot"
 LOG_DIR="$HOME/autoblogger-logs"
-PM2_NAME="ghost-autoblogger"
 
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/deploy-$(date +%F_%H-%M-%S).log"
@@ -22,12 +21,7 @@ git pull --rebase
 echo "==> install deps"
 bun install
 
-echo "==> restart PM2"
-if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
-  pm2 restart "$PM2_NAME" --update-env
-else
-  pm2 start /home/decrypt/ecosystem.config.js --only "$PM2_NAME" --update-env
-fi
-pm2 save
+echo "==> skip PM2 restart"
+echo "ghost-autoblogger is intended to run via system cron in one-shot mode."
 
 echo "✅ $(date -Is) autoblogger deploy done"
