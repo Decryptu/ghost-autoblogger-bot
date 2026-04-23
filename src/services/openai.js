@@ -1,45 +1,63 @@
+const OpenAI = require('openai');
 const config = require('../config');
 
-/**
- * Call GPT-5.1 via raw fetch (compatible with reasoning_effort, no temperature).
- * @param {string} systemPrompt
- * @param {string} userPrompt
- * @param {number} maxTokens - max_completion_tokens
- * @param {string} reasoningEffort - "none", "low", "medium", "high"
- * @returns {Promise<string>} model output text
- */
-async function chatCompletion(systemPrompt, userPrompt, maxTokens = 4096, reasoningEffort = 'low') {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: config.OPENAI_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_completion_tokens: maxTokens,
-      reasoning_effort: reasoningEffort,
-    }),
-  });
+let client = null;
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI API error ${response.status}: ${err}`);
+function getClient() {
+  if (!client) {
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
-
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-
-  if (!content?.trim()) {
-    console.error('OpenAI full response:', JSON.stringify(data, null, 2));
-    throw new Error('Empty model output');
-  }
-
-  return content.trim();
+  return client;
 }
 
-module.exports = { chatCompletion };
+/**
+ * Chat completion (no web search). Use for writing, titles, image keywords, etc.
+ */
+async function chatCompletion(systemPrompt, userPrompt, {
+  model = config.OPENAI_MODEL_MAIN,
+  maxTokens = 4096,
+  reasoningEffort = 'low',
+} = {}) {
+  const response = await getClient().chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    max_completion_tokens: maxTokens,
+    reasoning_effort: reasoningEffort,
+  });
+
+  const content = response?.choices?.[0]?.message?.content?.trim();
+  if (!content) {
+    console.error('OpenAI full response:', JSON.stringify(response, null, 2));
+    throw new Error('Empty model output');
+  }
+  return content;
+}
+
+/**
+ * Responses API call with web_search tool. Use to discover news or fact-check.
+ */
+async function webSearchCompletion(prompt, {
+  model = config.OPENAI_MODEL_MINI,
+  maxTokens = 8000,
+  reasoningEffort = 'low',
+} = {}) {
+  const response = await getClient().responses.create({
+    model,
+    input: prompt,
+    tools: [{ type: 'web_search' }],
+    max_output_tokens: maxTokens,
+    reasoning: { effort: reasoningEffort },
+  });
+
+  const text = (response.output_text || '').trim();
+  if (!text) {
+    console.error('OpenAI full response:', JSON.stringify(response, null, 2));
+    throw new Error('Empty web-search model output');
+  }
+  return text;
+}
+
+module.exports = { chatCompletion, webSearchCompletion };

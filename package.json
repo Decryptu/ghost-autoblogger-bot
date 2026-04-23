@@ -14,9 +14,9 @@
   "license": "ISC",
   "dependencies": {
     "@tryghost/admin-api": "^1.14.7",
-    "axios": "^1.15.2",
     "dotenv": "^17.4.2",
     "node-cron": "^4.2.1",
+    "openai": "^6.34.0",
     "unsplash-js": "^7.0.20"
   }
 }

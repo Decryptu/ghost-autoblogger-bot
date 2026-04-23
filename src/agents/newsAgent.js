@@ -1,108 +1,146 @@
 const { chatCompletion } = require('../services/openai');
 const { getRandomAuthor, resolveTags, publishPost } = require('../services/ghost');
-const { searchImage } = require('../services/unsplash');
-const { fetchAINews } = require('../services/newsApi');
+const { searchAndPickImageForDiscover } = require('../services/unsplash');
+const { discoverNews } = require('../services/newsDiscovery');
 const { loadProcessedArticles, saveProcessedArticles, saveLocally } = require('../utils/storage');
 const { markdownToHtml } = require('../utils/markdown');
+const config = require('../config');
 
 const NEWS_TAGS = ['actualite', 'technologie', 'intelligence-artificielle'];
 
-const SYSTEM_PROMPT = `Tu es un journaliste senior spécialisé en intelligence artificielle pour Pandia, un média tech français de référence. Tu écris des articles d'actualité percutants, informatifs et bien structurés.
+const ARTICLE_SYSTEM = `Tu es journaliste senior spécialisé IA pour Pandia, média tech français. Tu écris des articles d'actualité percutants, factuels, richement analysés.
 
 Règles strictes :
-- Écrire en français impeccable, ton journalistique professionnel
-- NE PAS inclure de titre H1 (le titre est géré séparément)
-- Commencer par une accroche percutante (1-2 phrases qui captent l'attention)
-- Structurer avec des H2 (##) et H3 (###)
-- Utiliser le gras (**texte**) pour les points clés et l'italique (*texte*) pour les termes techniques
-- NE JAMAIS utiliser "nous", "je", "révolution", "révolutionnaire"
-- Écrire au minimum 600 mots, idéalement 800-1200
-- Inclure des données chiffrées quand c'est pertinent
-- Ajouter du contexte et de l'analyse, pas juste reformuler la news
-- Terminer par une mise en perspective ou les implications futures
-- Ne pas plagier : reformuler entièrement avec ta propre analyse
-- Format markdown brut sans blocs de code`;
+- Français impeccable, ton journalistique professionnel (pas corporate, pas hypé).
+- NE PAS inclure de titre H1 (le titre est géré séparément).
+- Ouvrir par une accroche qui capte immédiatement l'attention en 1-2 phrases (pas de "aujourd'hui", pas de "récemment").
+- Structure avec des H2 (##) et H3 (###) qui racontent l'histoire, pas qui listent des rubriques.
+- Gras (**texte**) pour les chiffres et noms clés, italique (*texte*) pour les termes techniques.
+- NE JAMAIS utiliser "nous", "je", "révolution", "révolutionnaire", "bouleverse", "change la donne".
+- 600 à 1200 mots.
+- Chiffres précis, dates, noms propres, citations courtes si pertinent.
+- Apporter du contexte et de l'analyse, pas reformuler platement l'info.
+- Terminer par une mise en perspective concrète (conséquences mesurables, prochain jalon attendu).
+- Format markdown brut, aucun bloc de code.`;
 
-const TITLE_SYSTEM = `Tu es un rédacteur SEO expert pour Pandia, un média tech français sur l'IA. Tu crées des titres accrocheurs et optimisés pour le référencement.
+// DISCOVER-optimized title — this is the key lever on CTR
+const TITLE_SYSTEM = `Tu écris des titres pour Google Discover, PAS pour Google Search.
+
+Discover = arrêter le scroll sur mobile. L'utilisateur ne cherche rien, il scrolle. Le titre doit créer une émotion + une promesse en un coup d'œil.
+
+RÈGLES STRICTES :
+- Entre 70 et 95 caractères (hors quelques rares exceptions, jamais en dessous de 60).
+- Une émotion (curiosité, surprise, enjeu, inquiétude, fascination, fracture) + une promesse concrète.
+- Phrase française naturelle, ton humain, presque oral — pas un titre de communiqué.
+- Chiffres précis quand disponibles ("4 milliards", "en 48h", "de 12 à 83%").
+- Noms propres concrets (OpenAI, Sam Altman, Claude, Mistral, GPT-5).
+- ZÉRO mot générique interdit : "révolution", "incroyable", "bouleverse", "change tout", "voici pourquoi", "tout savoir", "c'est officiel".
+- Pas de clickbait : la promesse doit être tenue par l'article (pas de "vous n'allez pas croire").
+- Pas de préfixes de rubrique ("IA :", "Tech :", "Actu :"), pas de deux-points introducteurs.
+
+STYLE À IMITER (l'esprit, pas les mots) :
+- "Sam Altman promet 500 milliards de puces, Wall Street n'y croit déjà plus"
+- "OpenAI vient de perdre son meilleur chercheur en alignement, voici ce qu'il dénonce"
+- "Claude 4.7 bat GPT-5 sur le code, mais Anthropic refuse de crier victoire"
+- "Nvidia dépasse Apple en valeur, et ce n'est plus les GPU qui font la différence"
+
+Réponds UNIQUEMENT avec le titre. Rien avant, rien après, pas de guillemets.`;
+
+// DISCOVER image keywords — bias toward faces, emotion, concrete scenes
+const IMAGE_KEYWORDS_SYSTEM = `Tu génères des mots-clés pour chercher une image sur Unsplash qui arrête le scroll dans un feed mobile Google Discover.
 
 Règles :
-- Le titre doit être en français, percutant et informatif
-- Optimisé pour le SEO (mots-clés pertinents en début de titre)
-- Entre 50 et 70 caractères idéalement
-- Pas de guillemets, pas de ponctuation inutile
-- Pas de clickbait excessif mais suffisamment intrigant
-- Donner UNIQUEMENT le titre, rien d'autre`;
+- 2 à 4 mots-clés en anglais séparés par des espaces.
+- Cherche du visage humain, de l'expression, une scène concrète, un gros plan, une atmosphère forte.
+- Interdit : "illustration", "concept", "abstract", "generic", "stock", "futuristic".
+- Si le sujet concerne une personne nommée, décris son rôle/contexte (ex: "CEO speaking stage", "engineer dark office screen").
+- Si le sujet est un drama/conflit/régulation, vise "courtroom", "protest", "board meeting tense", "contract signing".
 
-const IMAGE_KEYWORDS_SYSTEM = `Tu génères des mots-clés de recherche pour trouver une image sur Unsplash. Réponds UNIQUEMENT avec 2-4 mots-clés en anglais séparés par des espaces. Pas de phrases, juste les mots-clés. Exemple : "robot artificial intelligence future"`;
+Réponds UNIQUEMENT avec les mots-clés. Pas de phrase.`;
 
 /**
  * Run the news article pipeline.
- * Fetches news, generates article, publishes to Ghost.
+ * 1. Discover fresh AI-news candidates via web search.
+ * 2. Pick the first unseen one.
+ * 3. Generate a Discover-optimized title, emotional image keywords, and the article body.
+ * 4. Pick the most scroll-stopping image, publish to Ghost.
  */
 async function runNewsAgent() {
   console.log('\n=== News Agent: Starting ===');
 
   const processedArticles = await loadProcessedArticles();
-  const articles = await fetchAINews();
 
-  if (articles.length === 0) {
-    console.log('No articles found from NewsAPI');
+  console.log('Discovering news candidates via AI web search...');
+  const candidates = await discoverNews([...processedArticles]);
+
+  if (candidates.length === 0) {
+    console.log('No candidates surfaced this run. Exiting.');
+    return;
+  }
+  console.log(`Discovery returned ${candidates.length} candidate(s)`);
+
+  const fresh = candidates.filter(c => !processedArticles.has(c.headline));
+  if (fresh.length === 0) {
+    console.log('All candidates already processed. Exiting.');
     return;
   }
 
-  const newArticles = articles.filter(a => !processedArticles.has(a.title));
-  if (newArticles.length === 0) {
-    console.log('No new articles to process');
-    return;
-  }
-
-  const article = newArticles[0];
-  processedArticles.add(article.title);
+  const candidate = fresh[0];
+  processedArticles.add(candidate.headline);
   await saveProcessedArticles(processedArticles);
 
-  console.log(`Processing: ${article.title}`);
+  console.log(`Processing: ${candidate.headline}`);
+  console.log(`Angle: ${candidate.angle}`);
 
-  // Generate article content, title, and image keywords in parallel
-  const [frenchArticle, frenchTitle, imageKeywords] = await Promise.all([
-    chatCompletion(
-      SYSTEM_PROMPT,
-      `Voici l'actualité à traiter. Écris un article complet, riche et analytique en markdown brut :\n\nTitre original : ${article.title}\n\nDescription : ${article.description}\n\nSource : ${article.source?.name || 'N/A'}`,
-      4096,
-      'low'
-    ),
+  const sourcesLine = Array.isArray(candidate.sources) && candidate.sources.length > 0
+    ? `\n\nSources repérées : ${candidate.sources.join(', ')}`
+    : '';
+
+  const userBrief = `Sujet : ${candidate.headline}
+
+Angle éditorial : ${candidate.angle || 'non précisé'}
+
+Faits à couvrir : ${candidate.summary}${sourcesLine}
+
+Rédige l'article en markdown brut, 600-1200 mots, selon les règles système.`;
+
+  const [articleBody, discoverTitle, imageKeywords] = await Promise.all([
+    chatCompletion(ARTICLE_SYSTEM, userBrief, {
+      model: config.OPENAI_MODEL_MAIN,
+      maxTokens: 4096,
+      reasoningEffort: 'low',
+    }),
     chatCompletion(
       TITLE_SYSTEM,
-      `Reformule ce titre en français pour un média tech sur l'IA : "${article.title}"`,
-      150,
-      'none'
+      `Sujet : ${candidate.headline}\nAngle : ${candidate.angle || 'non précisé'}\nContexte : ${candidate.summary}\n\nÉcris le titre Discover (70-95 caractères, émotion + promesse).`,
+      { model: config.OPENAI_MODEL_MAIN, maxTokens: 120, reasoningEffort: 'none' },
     ),
     chatCompletion(
       IMAGE_KEYWORDS_SYSTEM,
-      `Article about: ${article.title}`,
-      50,
-      'none'
+      `Article : ${candidate.headline}\nAngle : ${candidate.angle || ''}`,
+      { model: config.OPENAI_MODEL_MINI, maxTokens: 30, reasoningEffort: 'none' },
     ),
   ]);
 
-  if (!frenchArticle) {
-    console.error('Failed to generate article');
+  if (!articleBody) {
+    console.error('Failed to generate article body');
     return;
   }
 
-  // Fetch image and resolve tags in parallel
+  console.log(`Title: ${discoverTitle}`);
+  console.log(`Image keywords: ${imageKeywords}`);
+
   const [imageUrl, tags, author] = await Promise.all([
-    searchImage(imageKeywords),
+    searchAndPickImageForDiscover(imageKeywords, discoverTitle),
     resolveTags(NEWS_TAGS),
     getRandomAuthor(),
   ]);
 
-  // Save locally
-  await saveLocally(frenchTitle, frenchArticle, imageUrl, NEWS_TAGS);
+  await saveLocally(discoverTitle, articleBody, imageUrl, NEWS_TAGS);
 
-  // Publish to Ghost
-  const html = markdownToHtml(frenchArticle);
+  const html = markdownToHtml(articleBody);
   await publishPost({
-    title: frenchTitle,
+    title: discoverTitle,
     html,
     featureImage: imageUrl,
     tags,
