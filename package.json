@@ -13,10 +13,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tryghost/admin-api": "^1.13.13",
-    "axios": "^1.9.0",
-    "dotenv": "^16.5.0",
-    "node-cron": "^3.0.3",
-    "unsplash-js": "^7.0.19"
+    "@tryghost/admin-api": "^1.14.7",
+    "axios": "^1.15.2",
+    "dotenv": "^17.4.2",
+    "node-cron": "^4.2.1",
+    "unsplash-js": "^7.0.20"
   }
 }
