@@ -50,14 +50,13 @@ STYLE À IMITER (l'esprit, pas les mots) :
 - "Nvidia dépasse Apple en valeur, et ce n'est plus les GPU qui rapportent le plus"
 - "Meta met Llama 5 dans tes lunettes Ray-Ban, la CNIL demande déjà des comptes"
 
-MÉTHODE OBLIGATOIRE (pense-le, ne l'écris pas) :
-1. Lis le sujet, l'angle et l'intro de l'article fournis.
-2. Identifie la TENSION centrale du sujet — qu'est-ce qui surprend, inquiète, contredit, interpelle ?
-3. Brainstorme mentalement 6 titres dans 6 angles différents (chiffre choc, contradiction, coup de théâtre, enjeu humain, conflit entre acteurs, révélation cachée).
-4. Note les faiblesses de chacun contre les règles et les anti-patterns.
-5. Choisis le meilleur. S'il n'en passe aucun, refais un tour.
+TEST FINAL avant de répondre (appliquer mentalement à ta proposition) :
+- Est-ce qu'il y a UNE tension claire (contradiction, chiffre choc, enjeu humain) ?
+- Est-ce que le titre pourrait apparaître tel quel sur le compte Twitter de la boîte concernée ? Si oui, c'est raté — rends-le plus tranchant.
+- Y a-t-il un seul mot interdit ou anti-pattern ? Si oui, réécris.
+- Entre 70 et 95 caractères ?
 
-Réponds UNIQUEMENT avec le titre final. Rien avant, rien après. Pas de guillemets, pas d'alternatives, pas d'explication.`;
+Réponds UNIQUEMENT avec le titre final. Rien avant, rien après, pas de guillemets, pas d'alternatives, pas d'explication.`;
 
 // DISCOVER image keywords — bias toward faces, emotion, concrete scenes
 const IMAGE_KEYWORDS_SYSTEM = `Tu génères des mots-clés pour chercher une image sur Unsplash qui arrête le scroll dans un feed mobile Google Discover.
@@ -146,13 +145,14 @@ ${articleIntro}
 
 Écris maintenant le titre Discover final selon la méthode obligatoire (brainstorm mental de 6 angles, évaluation contre les anti-patterns, puis le meilleur).`;
 
-  // 2. Title (reasoning_effort: medium — CTR lever, worth the thinking tokens)
-  //    + image keywords in parallel since they're independent now.
+  // 2. Title + image keywords in parallel (both independent of each other now).
+  //    No reasoning — prompt does the work. 400 tokens is pure safety margin:
+  //    a real title is ~30 tokens, rest is headroom in case the model stutters.
   const [discoverTitle, imageKeywords] = await Promise.all([
     chatCompletion(TITLE_SYSTEM, titleBrief, {
       model: config.OPENAI_MODEL_MAIN,
-      maxTokens: 600,
-      reasoningEffort: 'medium',
+      maxTokens: 400,
+      reasoningEffort: 'none',
     }),
     chatCompletion(
       IMAGE_KEYWORDS_SYSTEM,
