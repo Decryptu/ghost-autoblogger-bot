@@ -23,28 +23,41 @@ Règles strictes :
 - Terminer par une mise en perspective concrète (conséquences mesurables, prochain jalon attendu).
 - Format markdown brut, aucun bloc de code.`;
 
-// DISCOVER-optimized title — this is the key lever on CTR
-const TITLE_SYSTEM = `Tu écris des titres pour Google Discover, PAS pour Google Search.
+// DISCOVER-optimized title — this is the key lever on CTR. Worth thinking hard.
+const TITLE_SYSTEM = `Tu écris LE titre pour Google Discover. C'est le levier numéro 1 du CTR — plus important que le reste de l'article. On te demande de réfléchir, pas de réciter.
 
-Discover = arrêter le scroll sur mobile. L'utilisateur ne cherche rien, il scrolle. Le titre doit créer une émotion + une promesse en un coup d'œil.
+Discover = arrêter le scroll sur mobile. L'utilisateur ne cherche rien, il scrolle. Le titre doit créer une TENSION en un coup d'œil : une information concrète qui soulève immédiatement une question dans la tête du lecteur.
 
-RÈGLES STRICTES :
-- Entre 70 et 95 caractères (hors quelques rares exceptions, jamais en dessous de 60).
-- Une émotion (curiosité, surprise, enjeu, inquiétude, fascination, fracture) + une promesse concrète.
-- Phrase française naturelle, ton humain, presque oral — pas un titre de communiqué.
-- Chiffres précis quand disponibles ("4 milliards", "en 48h", "de 12 à 83%").
-- Noms propres concrets (OpenAI, Sam Altman, Claude, Mistral, GPT-5).
-- ZÉRO mot générique interdit : "révolution", "incroyable", "bouleverse", "change tout", "voici pourquoi", "tout savoir", "c'est officiel".
-- Pas de clickbait : la promesse doit être tenue par l'article (pas de "vous n'allez pas croire").
-- Pas de préfixes de rubrique ("IA :", "Tech :", "Actu :"), pas de deux-points introducteurs.
+RÈGLES DURES :
+- 70 à 95 caractères (jamais moins de 65, jamais plus de 95).
+- UNE seule claim par titre. Pas deux idées collées par virgule sans tension entre elles.
+- Chiffre précis OU nom propre concret en première moitié ("4 milliards", "Sam Altman", "GPT-5", "en 48h", "de 12 à 83%").
+- Ton humain, presque oral, français naturel. Pas un titre de communiqué, pas un post LinkedIn.
+- Une émotion identifiable : curiosité, surprise, enjeu, inquiétude, fracture, contradiction, révélation.
+
+ANTI-PATTERNS INTERDITS — si l'un apparaît, réécris :
+- Conclusions vides en fin de titre : ", un virage qui se voit déjà", ", ce que ça change", ", voici pourquoi", ", et ce n'est que le début", ", un tournant", ", un cap franchi", ", un signal fort".
+- Verbes fades corporate : "pousse", "déploie", "présente", "dévoile", "annonce" (à réserver quand rien d'autre ne marche).
+- Mots bannis : "révolution", "révolutionnaire", "bouleverse", "change tout", "incroyable", "tout savoir", "c'est officiel", "virage", "tournant", "cap".
+- Guillemets autour de termes marketing ("plus puissant", "inédit") — on les retire ou on les remplace par un fait vérifiable.
+- Préfixes de rubrique ("IA :", "Tech :", "Actu :") et deux-points introducteurs.
+- Titres descriptifs plats qui pourraient figurer dans un communiqué de presse de la boîte concernée. Si Meta pourrait tweeter ton titre sans le modifier, il est raté.
 
 STYLE À IMITER (l'esprit, pas les mots) :
 - "Sam Altman promet 500 milliards de puces, Wall Street n'y croit déjà plus"
-- "OpenAI vient de perdre son meilleur chercheur en alignement, voici ce qu'il dénonce"
-- "Claude 4.7 bat GPT-5 sur le code, mais Anthropic refuse de crier victoire"
-- "Nvidia dépasse Apple en valeur, et ce n'est plus les GPU qui font la différence"
+- "OpenAI perd son meilleur chercheur en alignement, il explique pourquoi il part"
+- "Claude 4.7 bat GPT-5 sur le code, Anthropic refuse pourtant de crier victoire"
+- "Nvidia dépasse Apple en valeur, et ce n'est plus les GPU qui rapportent le plus"
+- "Meta met Llama 5 dans tes lunettes Ray-Ban, la CNIL demande déjà des comptes"
 
-Réponds UNIQUEMENT avec le titre. Rien avant, rien après, pas de guillemets.`;
+MÉTHODE OBLIGATOIRE (pense-le, ne l'écris pas) :
+1. Lis le sujet, l'angle et l'intro de l'article fournis.
+2. Identifie la TENSION centrale du sujet — qu'est-ce qui surprend, inquiète, contredit, interpelle ?
+3. Brainstorme mentalement 6 titres dans 6 angles différents (chiffre choc, contradiction, coup de théâtre, enjeu humain, conflit entre acteurs, révélation cachée).
+4. Note les faiblesses de chacun contre les règles et les anti-patterns.
+5. Choisis le meilleur. S'il n'en passe aucun, refais un tour.
+
+Réponds UNIQUEMENT avec le titre final. Rien avant, rien après. Pas de guillemets, pas d'alternatives, pas d'explication.`;
 
 // DISCOVER image keywords — bias toward faces, emotion, concrete scenes
 const IMAGE_KEYWORDS_SYSTEM = `Tu génères des mots-clés pour chercher une image sur Unsplash qui arrête le scroll dans un feed mobile Google Discover.
@@ -104,28 +117,49 @@ Faits à couvrir : ${candidate.summary}${sourcesLine}
 
 Rédige l'article en markdown brut, 600-1200 mots, selon les règles système.`;
 
-  const [articleBody, discoverTitle, imageKeywords] = await Promise.all([
-    chatCompletion(ARTICLE_SYSTEM, userBrief, {
+  // 1. Write the article first — the title needs the real intro as context.
+  const articleBody = await chatCompletion(ARTICLE_SYSTEM, userBrief, {
+    model: config.OPENAI_MODEL_MAIN,
+    maxTokens: 4096,
+    reasoningEffort: 'low',
+  });
+
+  if (!articleBody) {
+    console.error('Failed to generate article body');
+    return;
+  }
+
+  // First ~500 chars of the article, skipping empty lines and headings.
+  const articleIntro = articleBody
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .join(' ')
+    .slice(0, 500);
+
+  const titleBrief = `Sujet brut : ${candidate.headline}
+Angle éditorial : ${candidate.angle || 'non précisé'}
+Résumé factuel : ${candidate.summary}
+
+Intro de l'article tel que rédigé :
+${articleIntro}
+
+Écris maintenant le titre Discover final selon la méthode obligatoire (brainstorm mental de 6 angles, évaluation contre les anti-patterns, puis le meilleur).`;
+
+  // 2. Title (reasoning_effort: medium — CTR lever, worth the thinking tokens)
+  //    + image keywords in parallel since they're independent now.
+  const [discoverTitle, imageKeywords] = await Promise.all([
+    chatCompletion(TITLE_SYSTEM, titleBrief, {
       model: config.OPENAI_MODEL_MAIN,
-      maxTokens: 4096,
-      reasoningEffort: 'low',
+      maxTokens: 600,
+      reasoningEffort: 'medium',
     }),
-    chatCompletion(
-      TITLE_SYSTEM,
-      `Sujet : ${candidate.headline}\nAngle : ${candidate.angle || 'non précisé'}\nContexte : ${candidate.summary}\n\nÉcris le titre Discover (70-95 caractères, émotion + promesse).`,
-      { model: config.OPENAI_MODEL_MAIN, maxTokens: 120, reasoningEffort: 'none' },
-    ),
     chatCompletion(
       IMAGE_KEYWORDS_SYSTEM,
       `Article : ${candidate.headline}\nAngle : ${candidate.angle || ''}`,
       { model: config.OPENAI_MODEL_MINI, maxTokens: 30, reasoningEffort: 'none' },
     ),
   ]);
-
-  if (!articleBody) {
-    console.error('Failed to generate article body');
-    return;
-  }
 
   console.log(`Title: ${discoverTitle}`);
   console.log(`Image keywords: ${imageKeywords}`);
