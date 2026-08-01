@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const cron = require('node-cron');
 const config = require('./config');
 const { runNewsAgent } = require('./agents/newsAgent');
@@ -49,7 +49,7 @@ async function main() {
     safeRun('GuideAgent', runGuideAgent);
   });
 
-  console.log('Pandia Autoblogger Bot is running.');
+  console.log(`Pandia Autoblogger Bot is running on ${config.MODEL}.`);
   console.log(`  News:  ${config.NEWS_CRON} (7h & 19h)`);
   console.log(`  Guide: ${config.GUIDE_CRON} (12h)`);
   console.log('');
@@ -59,7 +59,7 @@ async function main() {
   console.log('  --run    Run both agents now');
 }
 
-main().catch((error) => {
+main().catch(error => {
   console.error('[Main] Fatal error:', error);
   process.exit(1);
 });

@@ -1,159 +1,91 @@
 # Ghost Autoblogger Bot 🤖
 
-An automated content generation system for Ghost blogs that fetches AI news, translates them to French, and publishes them automatically using OpenAI's GPT-4o.
+Automated French content for a Ghost blog. Two independent agents:
 
-## Features
+- **News agent** — finds fresh AI news with hosted web search, writes the article, then derives a Google Discover–optimized title and its image keywords.
+- **Guide agent** — picks an unpublished evergreen SEO topic and writes a long-form guide for Google Search.
 
-- 🔄 Automatically fetches the latest AI news using NewsAPI
-- 🤖 Generates high-quality French articles using OpenAI's GPT-4o
-- 🖼️ Adds relevant featured images from Unsplash
-- 📝 Saves articles locally as markdown files
-- 🚀 Publishes directly to your Ghost blog
-- ⏰ Runs on a schedule (default: twice daily at 7 AM and 7 PM)
-- 🏷️ Automatically adds relevant tags
-- 📊 Includes error handling and logging
+Both publish straight to Ghost with a featured Unsplash image, a random staff author, and a local markdown copy in `generated_articles/`.
 
-## Prerequisites
+## Model strategy
 
-- Node.js (v14 or higher)
-- A Ghost blog with Admin API access
-- API keys for:
-  - OpenAI
-  - NewsAPI
-  - Unsplash
-  - Ghost Content API
-  - Ghost Admin API
+Everything runs on a single model, `gpt-5.6-luna`, with **reasoning effort as the only dial**. As of August 2026 the whole capability/cost Pareto frontier is held by Luna effort levels — no GPT-5.4 configuration is the best choice at any budget. The `gpt-5.6` alias routes to Sol, so the Luna id is spelled out.
 
-## Installation
+Per-task profiles live in [`src/config.js`](src/config.js) — one place for model, effort and output caps:
 
-1. Clone the repository:
+| Task | Effort | Why |
+|---|---|---|
+| `newsDiscovery` | `low` | Web search injects ~8.6k input tokens per call; keep the model cheap here. |
+| `article` | `high` | The product. |
+| `articleMeta` | `high` | The Discover title is the #1 CTR lever. |
+| `guide` | `high` | Long-form SEO. |
+| `guideTopic` | `low` | Pick a topic, avoid duplicates. |
+| `imagePick` | `none` | Selection from a supplied list. |
+
+Caps are `max_output_tokens` and must cover reasoning tokens *plus* the answer; they sit just above the real envelope so runaway responses surface instead of hiding.
+
+## Cost discipline
+
+- **Prompt caching**: every call splits stable content (`instructions`) from volatile content (`input`). Caching matches a prefix, so one changed byte at the front discards the rest. No `prompt_cache_key` is set — it scopes the cache to a namespace that starts empty and lowers the hit rate.
+- **Cached share is logged per call**: `[openai:article] in=1841 cached=1536 (83%) out=2210`. That ratio moves long before a bill does; a sustained drop means a prefix drifted.
+- **Merged calls**: title + image keywords are one call, guide topic + image keywords are one call. Each merged prompt states explicitly that its deliverables are judged independently — merging can otherwise collapse one answer into the other.
+- **Dedup lists are never numbered.** Positional labels renumber the whole block whenever an entry ages out, rewriting it from its first byte.
+- **Ghost reads are memoized** in-process (authors, tags, guide archive), so `--run` does not fetch the same thing twice.
+
+Structured outputs (strict JSON schema) are used everywhere except the search-backed discovery call — JSON mode and the hosted search tool are mutually exclusive, so that one recovers JSON with a tolerant parser ([`src/utils/json.js`](src/utils/json.js)).
+
+## Setup
 
 ```bash
-git clone https://github.com/Decryptu/ghost-autoblogger-bot.git
-cd ghost-autoblogger-bot
+bun install
+cp .env.example .env
 ```
 
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Create a `.env` file in the root directory:
+Fill `.env`:
 
 ```env
-OPENAI_API_KEY=your_openai_key
-GHOST_API_URL=your_ghost_url
-GHOST_CONTENT_API_KEY=your_ghost_content_key
-GHOST_ADMIN_API_KEY=your_ghost_admin_key
-UNSPLASH_ACCESS_KEY=your_unsplash_key
-NEWS_API_KEY=your_news_api_key
+OPENAI_API_KEY=
+GHOST_API_URL=
+GHOST_ADMIN_API_KEY=
+UNSPLASH_ACCESS_KEY=
 ```
 
 ## Usage
 
-### Local Development
+```bash
+bun run news     # one-shot: news article
+bun run guide    # one-shot: SEO guide
+bun run run      # one-shot: both
+bun start        # persistent scheduler (node-cron)
+```
 
-Run the bot immediately:
+One-shot mode exits non-zero on failure, so system cron can alert on it. Schedules live in `src/config.js` (`NEWS_CRON`, `GUIDE_CRON`).
+
+## Quality gates
 
 ```bash
-node bot.js --run
+bun run check
 ```
 
-### Production Deployment
+Runs Biome (lint + format), TypeScript in `checkJs` mode, and the unit tests. Nothing should be committed with a warning.
 
-For production, it's recommended to use PM2:
-
-1. Install PM2:
-
-```bash
-npm install -g pm2
-```
-
-2. Start the bot:
-
-```bash
-pm2 start ecosystem.config.js
-```
-
-3. Monitor the bot:
-
-```bash
-pm2 logs ghost-autoblogger
-```
-
-### Configuration
-
-Edit `config.js` to customize:
-
-- OpenAI model
-- Article prompt
-- Schedule timing
-- Default image URL
-- Author ID
-
-## File Structure
+## Structure
 
 ```
-├── bot.js              # Main bot logic
-├── config.js           # Configuration settings
-├── ecosystem.config.js # PM2 configuration
-├── .env               # Environment variables
-└── generated_articles/ # Local storage for generated articles
+src/
+├── index.js              # CLI + scheduler
+├── config.js             # model, per-task effort/caps, schedules
+├── agents/
+│   ├── newsAgent.js      # Discover pipeline
+│   └── guideAgent.js     # SEO pipeline
+├── services/
+│   ├── openai.js         # single API entry point, usage logging
+│   ├── newsDiscovery.js  # web-search veille
+│   ├── ghost.js          # publishing + memoized reads
+│   └── unsplash.js       # image search + AI pick
+└── utils/                # json, markdown, cache, env
 ```
-
-## Generated Content
-
-Articles are saved in two places:
-
-1. Locally in the `generated_articles` folder as markdown files
-2. Published directly to your Ghost blog
-
-## Customization
-
-### Changing the Schedule
-
-Edit `CRON_SCHEDULE` in `config.js`. Default is twice daily (`0 7,19 * * *`).
-
-### Modifying the Article Style
-
-Edit `ARTICLE_PROMPT` in `config.js` to change the tone, style, or format of generated articles.
-
-### Changing Tags
-
-Modify the tags array in the `publishToGhost` function in `bot.js`.
-
-## Error Handling
-
-The bot includes comprehensive error handling for:
-
-- API failures
-- Network issues
-- Content generation errors
-- Image fetching issues
-- Publishing problems
-
-All errors are logged to the console with detailed messages.
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
-MIT License - see the LICENSE file for details
-
-## Support
-
-For support, please open an issue in the GitHub repository.
-
-## Acknowledgments
-
-- OpenAI GPT-4o for content generation
-- Ghost for the amazing blogging platform
-- NewsAPI for news sources
-- Unsplash for images
+MIT — see LICENSE.

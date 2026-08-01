@@ -1,56 +1,9 @@
-const { webSearchCompletion } = require('./openai');
-const config = require('../config');
+const { complete } = require('./openai');
+const { extractJsonArray } = require('../utils/json');
 
-/**
- * Strip markdown fences and locate the first balanced JSON array in a string.
- */
-function extractJsonArray(text) {
-  let trimmed = (text || '').trim();
-  if (trimmed.startsWith('```')) {
-    trimmed = trimmed.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
-  }
-
-  const start = trimmed.indexOf('[');
-  if (start === -1) return [];
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = start; i < trimmed.length; i++) {
-    const ch = trimmed[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\') { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '[') depth++;
-    else if (ch === ']') {
-      depth--;
-      if (depth === 0) {
-        try {
-          const parsed = JSON.parse(trimmed.slice(start, i + 1));
-          return Array.isArray(parsed) ? parsed : [];
-        } catch {
-          return [];
-        }
-      }
-    }
-  }
-  return [];
-}
-
-/**
- * Discover AI-news candidates worth publishing, using an AI agent with web search.
- * Returns up to 5 candidates ranked by Discover-potential (scroll-stopping value).
- */
-async function discoverNews(recentTitles = []) {
-  const todayIso = new Date().toISOString().slice(0, 10);
-
-  const exclusionBlock = recentTitles.length
-    ? `\n\nSUJETS DÉJÀ PUBLIÉS (à éviter — même sujet ou très proche) :\n${recentTitles.slice(-40).map((t, i) => `${i + 1}. ${t}`).join('\n')}`
-    : '';
-
-  const prompt = `Tu es veilleur senior pour Pandia, média tech français spécialisé en IA. Date : ${todayIso}.
+// Stable prefix — never interpolate anything volatile in here, it is the part
+// prompt caching can reuse across runs.
+const DISCOVERY_INSTRUCTIONS = `Tu es veilleur senior pour Pandia, média tech français spécialisé en IA.
 
 Tu utilises web_search de manière AGRESSIVE pour repérer les sujets d'actu IA qui peuvent cartonner AUJOURD'HUI sur Google Discover — pas sur Google Search.
 
@@ -70,11 +23,10 @@ FILTRE DE PERTINENCE — appliquer strictement :
 - L'histoire doit avoir du relief pour un lecteur francophone qui scrolle : un nom connu, un chiffre tangible, un enjeu concret.
 - Préfère qualité à quantité : si rien ne sort du lot, renvoie moins (voire []).
 - Rejette les simples tweets, rumeurs non sourcées, posts de blog obscurs, contenus sponsorisés.
-- Rejette les sujets déjà couverts (voir liste ci-dessous).
+- Rejette les sujets proches de ceux déjà publiés qui te seront fournis.
+- Chaque candidat doit être vérifiable : au moins une source solide.
 
-Chaque candidat doit être vérifiable : au moins une source solide.${exclusionBlock}
-
-SORTIE — UNIQUEMENT un tableau JSON (aucun préambule, aucun commentaire, aucun code fence) :
+SORTIE — UNIQUEMENT un tableau json (aucun préambule, aucun commentaire, aucun code fence) :
 [
   {
     "headline": "Phrase factuelle en français résumant l'événement",
@@ -86,14 +38,26 @@ SORTIE — UNIQUEMENT un tableau JSON (aucun préambule, aucun commentaire, aucu
 
 3 à 5 candidats max. Si rien n'atteint le niveau Discover, renvoie [].`;
 
-  const raw = await webSearchCompletion(prompt, {
-    model: config.OPENAI_MODEL_MINI,
-    maxTokens: 12000,
-    reasoningEffort: 'low',
+/**
+ * Discover AI-news candidates worth publishing, using web search.
+ * Returns up to 5 candidates ranked by Discover-potential.
+ */
+async function discoverNews(recentTitles = []) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  // Referenced by their own text, never by position: a numbered list renumbers
+  // whenever an entry ages out, rewriting the block from its first byte.
+  const exclusions = recentTitles.slice(-40);
+  const exclusionBlock = exclusions.length
+    ? `\n\nSUJETS DÉJÀ PUBLIÉS (à éviter — même sujet ou très proche) :\n${exclusions.map(t => `- ${t}`).join('\n')}`
+    : '';
+
+  const raw = await complete('newsDiscovery', {
+    instructions: DISCOVERY_INSTRUCTIONS,
+    input: `Date du jour : ${todayIso}.${exclusionBlock}\n\nLance la veille et renvoie le tableau json des candidats.`,
   });
 
-  const candidates = extractJsonArray(raw);
-  return candidates.filter(c => c && c.headline && c.summary);
+  return extractJsonArray(raw).filter(c => c?.headline && c?.summary);
 }
 
 module.exports = { discoverNews };

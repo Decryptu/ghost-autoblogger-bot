@@ -37,7 +37,10 @@ async function saveLocally(title, content, imageUrl, tags) {
   await fs.mkdir(GENERATED_DIR, { recursive: true });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const slug = title.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 80);
+  const slug = title
+    .replace(/[^a-z0-9]/gi, '-')
+    .toLowerCase()
+    .slice(0, 80);
   const fileName = `${timestamp}-${slug}.md`;
   const filePath = path.join(GENERATED_DIR, fileName);
 
