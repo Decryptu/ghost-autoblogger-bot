@@ -1,46 +1,83 @@
 /**
- * Convert markdown content to HTML for Ghost.
- * Handles headers, bold, italic, blockquotes, and paragraphs.
+ * Minimal markdown → HTML converter for Ghost's `source: html` import.
+ * Covers exactly what the prompts ask the models to emit: headings (h2-h6),
+ * bullet and numbered lists, blockquotes, paragraphs, bold, italic and links.
  */
-function markdownToHtml(markdown) {
-  return markdown
-    .split('\n')
-    .map(line => {
-      const trimmed = line.trim();
-      if (trimmed === '') return '';
 
-      // Headers (h2-h6 only, skip h1)
-      const headerMatch = trimmed.match(/^(#{1,6})\s+(.+)/);
-      if (headerMatch) {
-        const level = headerMatch[1].length;
-        if (level === 1) return '';
-        const text = headerMatch[2].replace(/\*\*/g, '');
-        return `<h${level}>${text}</h${level}>`;
-      }
+const HEADING = /^(#{1,6})\s+(.+)$/;
+const BULLET = /^[-*+]\s+(.+)$/;
+const ORDERED = /^\d+[.)]\s+(.+)$/;
 
-      // Blockquotes
-      if (trimmed.startsWith('>')) {
-        const quoteText = trimmed.replace(/^>\s*/, '');
-        return `<blockquote>${processInline(quoteText)}</blockquote>`;
-      }
-
-      // Regular paragraph
-      return `<p>${processInline(trimmed)}</p>`;
-    })
-    .filter(Boolean)
-    .join('\n');
+/** Process inline markdown: links, then bold, then italic. */
+function processInline(text) {
+  return text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\w)\*([^*]+)\*(?!\w)/g, '<em>$1</em>')
+    .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<em>$1</em>');
 }
 
-/**
- * Process inline markdown: bold first, then italic.
- */
-function processInline(text) {
-  // Bold: **text**
-  let result = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic: *text* or _text_ (but not inside words with underscores)
-  result = result.replace(/(?<!\w)\*([^*]+)\*(?!\w)/g, '<em>$1</em>');
-  result = result.replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<em>$1</em>');
-  return result;
+function markdownToHtml(markdown) {
+  const out = [];
+  /** @type {{ tag: 'ul' | 'ol', items: string[] } | null} */
+  let list = null;
+
+  const flushList = () => {
+    if (!list) return;
+    const items = list.items.map(i => `<li>${processInline(i)}</li>`).join('\n');
+    out.push(`<${list.tag}>\n${items}\n</${list.tag}>`);
+    list = null;
+  };
+
+  const pushItem = (tag, item) => {
+    if (!list || list.tag !== tag) {
+      flushList();
+      list = { tag, items: [] };
+    }
+    list.items.push(item);
+  };
+
+  for (const line of markdown.split('\n')) {
+    const trimmed = line.trim();
+
+    if (trimmed === '') {
+      flushList();
+      continue;
+    }
+
+    const bullet = trimmed.match(BULLET);
+    if (bullet) {
+      pushItem('ul', bullet[1]);
+      continue;
+    }
+
+    const ordered = trimmed.match(ORDERED);
+    if (ordered) {
+      pushItem('ol', ordered[1]);
+      continue;
+    }
+
+    flushList();
+
+    const heading = trimmed.match(HEADING);
+    if (heading) {
+      // h1 is dropped — the post title owns it.
+      const level = heading[1].length;
+      if (level === 1) continue;
+      out.push(`<h${level}>${heading[2].replace(/\*\*/g, '')}</h${level}>`);
+      continue;
+    }
+
+    if (trimmed.startsWith('>')) {
+      out.push(`<blockquote>${processInline(trimmed.replace(/^>\s*/, ''))}</blockquote>`);
+      continue;
+    }
+
+    out.push(`<p>${processInline(trimmed)}</p>`);
+  }
+
+  flushList();
+  return out.join('\n');
 }
 
 module.exports = { markdownToHtml };

@@ -1,14 +1,20 @@
-const { chatCompletion } = require('../services/openai');
-const { getRandomAuthor, resolveTags, publishPost, fetchPostTitlesByTag } = require('../services/ghost');
+const { complete, completeJson } = require('../services/openai');
+const {
+  getRandomAuthor,
+  resolveTags,
+  publishPost,
+  fetchPostTitlesByTag,
+} = require('../services/ghost');
 const { searchImage } = require('../services/unsplash');
 const { saveLocally } = require('../utils/storage');
 const { markdownToHtml } = require('../utils/markdown');
-const config = require('../config');
 
 const GUIDE_TAGS = ['guide', 'intelligence-artificielle'];
 
-// SEO-first — cold traffic from Google Search with explicit intent.
-const TOPIC_SYSTEM = `Tu es rédacteur en chef SEO de Pandia, média tech français sur l'IA. Tu choisis UN sujet de guide pratique à publier aujourd'hui.
+// One call, two independent deliverables: the SEO topic and its image keywords.
+const TOPIC_SYSTEM = `Tu es rédacteur en chef SEO de Pandia, média tech français sur l'IA. Tu produis DEUX livrables indépendants : le sujet du guide à publier aujourd'hui, et les mots-clés de recherche d'image qui l'illustreront. Chacun est jugé sur ses propres critères.
+
+=== LIVRABLE 1 — LE SUJET ===
 
 Les guides sont du contenu FROID (evergreen), conçus pour capter du trafic Google Search sur des requêtes à forte intention. Ce n'est PAS pour Discover, pas pour les réseaux sociaux.
 
@@ -28,8 +34,24 @@ RÈGLES DE TITRE SEO :
 - Pas d'émotion / pas de hook Discover — c'est un titre de recherche froide.
 - Spécifique, pas générique : "Comment utiliser ChatGPT pour rédiger un CV en 2026" plutôt que "Guide ChatGPT".
 - Pas de guillemets, pas de préfixes de rubrique.
+- Le sujet doit être différent de tous les guides déjà publiés qui te seront fournis.
 
-Réponds UNIQUEMENT avec le titre du guide en français, rien d'autre.`;
+=== LIVRABLE 2 — LES MOTS-CLÉS IMAGE ===
+
+2 à 4 mots-clés en anglais, séparés par des espaces, pour trouver sur Unsplash une illustration propre et professionnelle : claire, soignée, pertinente — pas émotionnelle ni sensationnelle.`;
+
+const TOPIC_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'Le titre du guide en français' },
+    imageKeywords: {
+      type: 'string',
+      description: '2 à 4 mots-clés anglais séparés par des espaces',
+    },
+  },
+  required: ['title', 'imageKeywords'],
+  additionalProperties: false,
+};
 
 const GUIDE_SYSTEM = `Tu es rédacteur SEO expert pour Pandia, média tech français sur l'IA. Tu écris des guides pratiques approfondis, clairs, utiles, optimisés pour le référencement Google Search.
 
@@ -47,10 +69,6 @@ Règles strictes :
 - NE JAMAIS utiliser "nous", "je", "révolution".
 - Format markdown brut, aucun bloc de code.`;
 
-const IMAGE_KEYWORDS_SYSTEM = `Tu génères 2-4 mots-clés en anglais pour chercher une image d'illustration propre et professionnelle sur Unsplash. L'image accompagne un guide pratique : elle doit être claire, soignée, pertinente — pas émotionnelle ou sensationnelle.
-
-Réponds UNIQUEMENT avec les mots-clés séparés par des espaces.`;
-
 /**
  * Run the guide article pipeline.
  * Picks a unique SEO-driven topic, generates an evergreen guide, publishes to Ghost.
@@ -61,36 +79,27 @@ async function runGuideAgent() {
   const existingTitles = await fetchPostTitlesByTag('guide');
   console.log(`Found ${existingTitles.length} existing guides in Ghost`);
 
-  let dedupContext = '';
-  if (existingTitles.length > 0) {
-    dedupContext = `\n\nATTENTION — Voici les ${existingTitles.length} guides déjà publiés. Choisis un sujet DIFFÉRENT de tous ceux-ci :\n${existingTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
-  }
+  // Listed as plain bullets, never numbered: positional labels renumber the
+  // whole block whenever a guide is added, discarding the cached prefix.
+  const dedupContext = existingTitles.length
+    ? `\n\nGUIDES DÉJÀ PUBLIÉS (choisis un sujet DIFFÉRENT de tous ceux-ci) :\n${existingTitles.map(t => `- ${t}`).join('\n')}`
+    : '';
 
-  const topic = await chatCompletion(
-    TOPIC_SYSTEM,
-    `Choisis un sujet de guide SEO sur l'IA à publier aujourd'hui.${dedupContext}`,
-    { model: config.OPENAI_MODEL_MAIN, maxTokens: 200, reasoningEffort: 'low' },
-  );
+  const topicMeta = await completeJson('guideTopic', {
+    instructions: TOPIC_SYSTEM,
+    schema: TOPIC_SCHEMA,
+    input: `Choisis un sujet de guide SEO sur l'IA à publier aujourd'hui, et ses mots-clés image.${dedupContext}`,
+  });
 
+  const topic = topicMeta.title.trim();
+  const imageKeywords = topicMeta.imageKeywords.trim();
   console.log(`Guide topic: ${topic}`);
+  console.log(`Image keywords: ${imageKeywords}`);
 
-  const [guideContent, imageKeywords] = await Promise.all([
-    chatCompletion(
-      GUIDE_SYSTEM,
-      `Écris un guide SEO complet et détaillé sur le sujet suivant :\n\n"${topic}"\n\nLe guide doit être exhaustif, pratique, optimisé pour Google Search et utile pour un lecteur francophone. Format markdown brut.`,
-      { model: config.OPENAI_MODEL_MAIN, maxTokens: 8192, reasoningEffort: 'low' },
-    ),
-    chatCompletion(
-      IMAGE_KEYWORDS_SYSTEM,
-      `Guide about: ${topic}`,
-      { model: config.OPENAI_MODEL_MINI, maxTokens: 30, reasoningEffort: 'none' },
-    ),
-  ]);
-
-  if (!guideContent) {
-    console.error('Failed to generate guide');
-    return;
-  }
+  const guideContent = await complete('guide', {
+    instructions: GUIDE_SYSTEM,
+    input: `Écris un guide SEO complet et détaillé sur le sujet suivant :\n\n"${topic}"\n\nLe guide doit être exhaustif, pratique, optimisé pour Google Search et utile pour un lecteur francophone. Format markdown brut.`,
+  });
 
   const [imageUrl, tags, author] = await Promise.all([
     searchImage(imageKeywords),
@@ -100,10 +109,9 @@ async function runGuideAgent() {
 
   await saveLocally(topic, guideContent, imageUrl, GUIDE_TAGS);
 
-  const html = markdownToHtml(guideContent);
   await publishPost({
     title: topic,
-    html,
+    html: markdownToHtml(guideContent),
     featureImage: imageUrl,
     tags,
     authorId: author.id,

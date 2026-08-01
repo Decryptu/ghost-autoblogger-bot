@@ -1,22 +1,35 @@
 {
   "name": "ghost-news-bot",
-  "version": "2.0.0",
-  "description": "",
+  "version": "3.0.0",
+  "description": "Autoblogger for Ghost: AI news articles and evergreen SEO guides, in French.",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/index.js",
     "news": "node src/index.js --news",
     "guide": "node src/index.js --guide",
-    "test": "node src/index.js --run"
+    "run": "node src/index.js --run",
+    "test": "node --test \"src/**/*.test.js\"",
+    "lint": "biome check src",
+    "format": "biome check --write src",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check src && tsc --noEmit && node --test \"src/**/*.test.js\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tryghost/admin-api": "^1.14.7",
+    "@tryghost/admin-api": "^1.14.11",
     "dotenv": "^17.4.2",
-    "node-cron": "^4.2.1",
-    "openai": "^6.34.0",
+    "node-cron": "^4.6.0",
+    "openai": "^7.3.0",
     "unsplash-js": "^7.0.20"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.6",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
   }
 }

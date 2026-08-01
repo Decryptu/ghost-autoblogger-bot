@@ -1,10 +1,9 @@
-const { chatCompletion } = require('../services/openai');
+const { complete, completeJson } = require('../services/openai');
 const { getRandomAuthor, resolveTags, publishPost } = require('../services/ghost');
 const { searchAndPickImageForDiscover } = require('../services/unsplash');
 const { discoverNews } = require('../services/newsDiscovery');
 const { loadProcessedArticles, saveProcessedArticles, saveLocally } = require('../utils/storage');
 const { markdownToHtml } = require('../utils/markdown');
-const config = require('../config');
 
 const NEWS_TAGS = ['actualite', 'technologie', 'intelligence-artificielle'];
 
@@ -23,8 +22,14 @@ Règles strictes :
 - Terminer par une mise en perspective concrète (conséquences mesurables, prochain jalon attendu).
 - Format markdown brut, aucun bloc de code.`;
 
-// DISCOVER-optimized title — this is the key lever on CTR. Worth thinking hard.
-const TITLE_SYSTEM = `Tu écris LE titre pour Google Discover. C'est le levier numéro 1 du CTR — plus important que le reste de l'article. On te demande de réfléchir, pas de réciter.
+// One call, two independent deliverables: the Discover title and the Unsplash
+// keywords. Both read the same brief, so merging halves the input cost — but
+// the prompt states explicitly that neither answer constrains the other.
+const META_SYSTEM = `Tu produis DEUX livrables indépendants pour un article déjà rédigé : un titre Google Discover, et des mots-clés de recherche d'image. Chacun est jugé séparément, sur ses propres critères. La qualité de l'un ne doit jamais être sacrifiée pour l'autre.
+
+=== LIVRABLE 1 — LE TITRE DISCOVER ===
+
+C'est le levier numéro 1 du CTR — plus important que le reste de l'article. On te demande de réfléchir, pas de réciter.
 
 Discover = arrêter le scroll sur mobile. L'utilisateur ne cherche rien, il scrolle. Le titre doit créer une TENSION en un coup d'œil : une information concrète qui soulève immédiatement une question dans la tête du lecteur.
 
@@ -50,31 +55,40 @@ STYLE À IMITER (l'esprit, pas les mots) :
 - "Nvidia dépasse Apple en valeur, et ce n'est plus les GPU qui rapportent le plus"
 - "Meta met Llama 5 dans tes lunettes Ray-Ban, la CNIL demande déjà des comptes"
 
-TEST FINAL avant de répondre (appliquer mentalement à ta proposition) :
+TEST FINAL avant de répondre :
 - Est-ce qu'il y a UNE tension claire (contradiction, chiffre choc, enjeu humain) ?
 - Est-ce que le titre pourrait apparaître tel quel sur le compte Twitter de la boîte concernée ? Si oui, c'est raté — rends-le plus tranchant.
 - Y a-t-il un seul mot interdit ou anti-pattern ? Si oui, réécris.
 - Entre 70 et 95 caractères ?
 
-Réponds UNIQUEMENT avec le titre final. Rien avant, rien après, pas de guillemets, pas d'alternatives, pas d'explication.`;
+=== LIVRABLE 2 — LES MOTS-CLÉS IMAGE ===
 
-// DISCOVER image keywords — bias toward faces, emotion, concrete scenes
-const IMAGE_KEYWORDS_SYSTEM = `Tu génères des mots-clés pour chercher une image sur Unsplash qui arrête le scroll dans un feed mobile Google Discover.
-
-Règles :
-- 2 à 4 mots-clés en anglais séparés par des espaces.
+Mots-clés pour chercher sur Unsplash une image qui arrête le scroll dans un feed mobile.
+- 2 à 4 mots-clés en anglais, séparés par des espaces.
 - Cherche du visage humain, de l'expression, une scène concrète, un gros plan, une atmosphère forte.
 - Interdit : "illustration", "concept", "abstract", "generic", "stock", "futuristic".
-- Si le sujet concerne une personne nommée, décris son rôle/contexte (ex: "CEO speaking stage", "engineer dark office screen").
+- Si le sujet concerne une personne nommée, décris son rôle/contexte ("CEO speaking stage", "engineer dark office screen").
 - Si le sujet est un drama/conflit/régulation, vise "courtroom", "protest", "board meeting tense", "contract signing".
+- Ils décrivent le SUJET de l'article, pas la formulation du titre.`;
 
-Réponds UNIQUEMENT avec les mots-clés. Pas de phrase.`;
+const META_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'Le titre Discover final, sans guillemets' },
+    imageKeywords: {
+      type: 'string',
+      description: '2 à 4 mots-clés anglais séparés par des espaces',
+    },
+  },
+  required: ['title', 'imageKeywords'],
+  additionalProperties: false,
+};
 
 /**
  * Run the news article pipeline.
  * 1. Discover fresh AI-news candidates via web search.
- * 2. Pick the first unseen one.
- * 3. Generate a Discover-optimized title, emotional image keywords, and the article body.
+ * 2. Pick the first unseen one and write the article.
+ * 3. Derive the Discover title + image keywords from the finished article.
  * 4. Pick the most scroll-stopping image, publish to Ghost.
  */
 async function runNewsAgent() {
@@ -85,15 +99,9 @@ async function runNewsAgent() {
   console.log('Discovering news candidates via AI web search...');
   const candidates = await discoverNews([...processedArticles]);
 
-  if (candidates.length === 0) {
-    console.log('No candidates surfaced this run. Exiting.');
-    return;
-  }
-  console.log(`Discovery returned ${candidates.length} candidate(s)`);
-
   const fresh = candidates.filter(c => !processedArticles.has(c.headline));
   if (fresh.length === 0) {
-    console.log('All candidates already processed. Exiting.');
+    console.log(`No fresh candidate (${candidates.length} returned). Exiting.`);
     return;
   }
 
@@ -104,29 +112,22 @@ async function runNewsAgent() {
   console.log(`Processing: ${candidate.headline}`);
   console.log(`Angle: ${candidate.angle}`);
 
-  const sourcesLine = Array.isArray(candidate.sources) && candidate.sources.length > 0
-    ? `\n\nSources repérées : ${candidate.sources.join(', ')}`
-    : '';
+  const sourcesLine =
+    Array.isArray(candidate.sources) && candidate.sources.length > 0
+      ? `\n\nSources repérées : ${candidate.sources.join(', ')}`
+      : '';
 
-  const userBrief = `Sujet : ${candidate.headline}
+  const brief = `Sujet : ${candidate.headline}
 
 Angle éditorial : ${candidate.angle || 'non précisé'}
 
-Faits à couvrir : ${candidate.summary}${sourcesLine}
+Faits à couvrir : ${candidate.summary}${sourcesLine}`;
 
-Rédige l'article en markdown brut, 600-1200 mots, selon les règles système.`;
-
-  // 1. Write the article first — the title needs the real intro as context.
-  const articleBody = await chatCompletion(ARTICLE_SYSTEM, userBrief, {
-    model: config.OPENAI_MODEL_MAIN,
-    maxTokens: 4096,
-    reasoningEffort: 'low',
+  // Article first — the title needs the real intro as context.
+  const articleBody = await complete('article', {
+    instructions: ARTICLE_SYSTEM,
+    input: `${brief}\n\nRédige l'article en markdown brut, 600-1200 mots, selon les règles système.`,
   });
-
-  if (!articleBody) {
-    console.error('Failed to generate article body');
-    return;
-  }
 
   // First ~500 chars of the article, skipping empty lines and headings.
   const articleIntro = articleBody
@@ -136,46 +137,33 @@ Rédige l'article en markdown brut, 600-1200 mots, selon les règles système.`;
     .join(' ')
     .slice(0, 500);
 
-  const titleBrief = `Sujet brut : ${candidate.headline}
-Angle éditorial : ${candidate.angle || 'non précisé'}
-Résumé factuel : ${candidate.summary}
+  const meta = await completeJson('articleMeta', {
+    instructions: META_SYSTEM,
+    schema: META_SCHEMA,
+    input: `${brief}
 
 Intro de l'article tel que rédigé :
 ${articleIntro}
 
-Écris maintenant le titre Discover final selon la méthode obligatoire (brainstorm mental de 6 angles, évaluation contre les anti-patterns, puis le meilleur).`;
+Produis le titre Discover final et les mots-clés image.`,
+  });
 
-  // 2. Title + image keywords in parallel (both independent of each other now).
-  //    No reasoning — prompt does the work. 400 tokens is pure safety margin:
-  //    a real title is ~30 tokens, rest is headroom in case the model stutters.
-  const [discoverTitle, imageKeywords] = await Promise.all([
-    chatCompletion(TITLE_SYSTEM, titleBrief, {
-      model: config.OPENAI_MODEL_MAIN,
-      maxTokens: 400,
-      reasoningEffort: 'none',
-    }),
-    chatCompletion(
-      IMAGE_KEYWORDS_SYSTEM,
-      `Article : ${candidate.headline}\nAngle : ${candidate.angle || ''}`,
-      { model: config.OPENAI_MODEL_MINI, maxTokens: 30, reasoningEffort: 'none' },
-    ),
-  ]);
-
-  console.log(`Title: ${discoverTitle}`);
+  const title = meta.title.trim();
+  const imageKeywords = meta.imageKeywords.trim();
+  console.log(`Title (${title.length} chars): ${title}`);
   console.log(`Image keywords: ${imageKeywords}`);
 
   const [imageUrl, tags, author] = await Promise.all([
-    searchAndPickImageForDiscover(imageKeywords, discoverTitle),
+    searchAndPickImageForDiscover(imageKeywords, title),
     resolveTags(NEWS_TAGS),
     getRandomAuthor(),
   ]);
 
-  await saveLocally(discoverTitle, articleBody, imageUrl, NEWS_TAGS);
+  await saveLocally(title, articleBody, imageUrl, NEWS_TAGS);
 
-  const html = markdownToHtml(articleBody);
   await publishPost({
-    title: discoverTitle,
-    html,
+    title,
+    html: markdownToHtml(articleBody),
     featureImage: imageUrl,
     tags,
     authorId: author.id,
