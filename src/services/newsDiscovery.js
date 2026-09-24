@@ -1,8 +1,7 @@
 const { complete } = require('./openai');
 const { extractJsonArray } = require('../utils/json');
 
-// Stable prefix — never interpolate anything volatile in here, it is the part
-// prompt caching can reuse across runs.
+// Never interpolate anything volatile here: it is the cached prompt prefix.
 const DISCOVERY_INSTRUCTIONS = `Tu es veilleur senior pour Pandia, média tech français spécialisé en IA.
 
 Tu utilises web_search de manière AGRESSIVE pour repérer les sujets d'actu IA qui peuvent cartonner AUJOURD'HUI sur Google Discover — pas sur Google Search.
@@ -38,15 +37,10 @@ SORTIE — UNIQUEMENT un tableau json (aucun préambule, aucun commentaire, aucu
 
 3 à 5 candidats max. Si rien n'atteint le niveau Discover, renvoie [].`;
 
-/**
- * Discover AI-news candidates worth publishing, using web search.
- * Returns up to 5 candidates ranked by Discover-potential.
- */
 async function discoverNews(recentTitles = []) {
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Referenced by their own text, never by position: a numbered list renumbers
-  // whenever an entry ages out, rewriting the block from its first byte.
+  // Never numbered: renumbering as entries age out would break the prompt cache prefix.
   const exclusions = recentTitles.slice(-40);
   const exclusionBlock = exclusions.length
     ? `\n\nSUJETS DÉJÀ PUBLIÉS (à éviter — même sujet ou très proche) :\n${exclusions.map(t => `- ${t}`).join('\n')}`

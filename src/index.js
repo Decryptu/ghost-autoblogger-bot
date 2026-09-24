@@ -4,7 +4,6 @@ const config = require('./config');
 const { runNewsAgent } = require('./agents/newsAgent');
 const { runGuideAgent } = require('./agents/guideAgent');
 
-// Wrap agent runs with error handling
 async function safeRun(name, fn) {
   try {
     await fn();
@@ -18,7 +17,6 @@ async function safeRun(name, fn) {
 async function main() {
   const args = process.argv.slice(2);
 
-  // One-shot mode for external schedulers such as cron.
   if (args.includes('--news')) {
     console.log('Running News Agent immediately (one-shot mode)');
     const ok = await safeRun('NewsAgent', runNewsAgent);
@@ -38,7 +36,6 @@ async function main() {
     process.exit(newsOk && guideOk ? 0 : 1);
   }
 
-  // Persistent scheduler mode.
   cron.schedule(config.NEWS_CRON, () => {
     console.log(`[${new Date().toISOString()}] Scheduled: News Agent`);
     safeRun('NewsAgent', runNewsAgent);

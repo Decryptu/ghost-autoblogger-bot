@@ -13,10 +13,6 @@ function getClient() {
   return client;
 }
 
-/**
- * Log cached input as a share of input on every call. Prefix drift shows up
- * here long before it shows up on a bill.
- */
 function logUsage(task, usage) {
   if (!usage) return;
   const input = usage.input_tokens || 0;
@@ -26,14 +22,8 @@ function logUsage(task, usage) {
   console.log(`[openai:${task}] in=${input} cached=${cached} (${share}%) out=${output}`);
 }
 
-/**
- * Run a task profile from config.
- *
- * `instructions` must hold the stable, per-task prompt and `input` the volatile
- * payload — prompt caching matches a prefix, so a single changed byte near the
- * front discards everything after it. No prompt cache key is set: it scopes the
- * cache to a private namespace that starts empty, which lowers the hit rate.
- */
+// Keep `instructions` stable and put volatile content in `input`: caching matches a prefix.
+// No prompt_cache_key: it scopes the cache to an empty namespace and lowers the hit rate.
 async function run(task, { instructions, input, schema }) {
   const profile = TASKS[task];
   if (!profile) throw new Error(`Unknown OpenAI task profile: ${task}`);
@@ -46,8 +36,7 @@ async function run(task, { instructions, input, schema }) {
     reasoning: { effort: profile.effort },
     store: false,
     ...(profile.search ? { tools: [{ type: 'web_search' }] } : {}),
-    // Structured outputs and the hosted search tool are mutually exclusive:
-    // search-backed calls ask for JSON in the prompt and recover it by scanning.
+    // Structured outputs and the hosted search tool are mutually exclusive.
     ...(schema && !profile.search
       ? { text: { format: { type: 'json_schema', name: task, strict: true, schema } } }
       : {}),
@@ -62,16 +51,10 @@ async function run(task, { instructions, input, schema }) {
   return text;
 }
 
-/** Run a task and return its text output. */
 function complete(task, options) {
   return run(task, options);
 }
 
-/**
- * Run a task and return parsed JSON. Pass a `schema` for strict structured
- * output (works at every effort level, including `none`); search-backed tasks
- * fall back to tolerant extraction.
- */
 async function completeJson(task, options) {
   const text = await run(task, options);
   const parsed = extractJson(text);

@@ -16,9 +16,6 @@ function getClient() {
   return ghost;
 }
 
-/**
- * Fetch all staff authors. Cached: both agents ask for an author in a `--run`.
- */
 const fetchAuthors = memo(async () => {
   try {
     const users = await getClient().users.browse({ limit: 'all' });
@@ -31,16 +28,13 @@ const fetchAuthors = memo(async () => {
   }
 }, GHOST_CACHE_TTL_MS);
 
-/** All existing tags, cached — resolveTags would otherwise browse them per agent. */
 const fetchTags = memo(() => getClient().tags.browse({ limit: 'all' }), GHOST_CACHE_TTL_MS);
 
-/** Pick a random author from the staff list. */
 async function getRandomAuthor() {
   const authors = await fetchAuthors();
   return authors[Math.floor(Math.random() * authors.length)];
 }
 
-/** Resolve tag references for Ghost: existing tags by id, new ones by name. */
 async function resolveTags(tagNames) {
   const existingTags = await fetchTags();
   return tagNames.map(name => {
@@ -49,7 +43,6 @@ async function resolveTags(tagNames) {
   });
 }
 
-/** Publish a post to Ghost. */
 async function publishPost({ title, html, featureImage, tags, authorId }) {
   const post = await getClient().posts.add(
     {
@@ -67,10 +60,6 @@ async function publishPost({ title, html, featureImage, tags, authorId }) {
   return post;
 }
 
-/**
- * All published post titles for a tag slug, used for topic deduplication.
- * Cached: paginating the whole archive is the most expensive Ghost read we do.
- */
 const fetchPostTitlesByTag = memo(async tagSlug => {
   const client = getClient();
   const titles = [];
