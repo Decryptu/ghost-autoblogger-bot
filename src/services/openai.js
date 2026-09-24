@@ -1,5 +1,5 @@
 const { OpenAI } = require('openai');
-const { MODEL, TASKS } = require('../config');
+const { TASKS } = require('../config');
 const { extractJson } = require('../utils/json');
 const { requireEnv } = require('../utils/env');
 
@@ -39,7 +39,7 @@ async function run(task, { instructions, input, schema }) {
   if (!profile) throw new Error(`Unknown OpenAI task profile: ${task}`);
 
   const response = await getClient().responses.create({
-    model: MODEL,
+    model: profile.model,
     instructions,
     input,
     max_output_tokens: profile.maxTokens,

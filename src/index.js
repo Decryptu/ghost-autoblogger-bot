@@ -49,7 +49,8 @@ async function main() {
     safeRun('GuideAgent', runGuideAgent);
   });
 
-  console.log(`Pandia Autoblogger Bot is running on ${config.MODEL}.`);
+  const models = new Set(Object.values(config.TASKS).map(({ model }) => model));
+  console.log(`Pandia Autoblogger Bot is running on ${[...models].join(' + ')}.`);
   console.log(`  News:  ${config.NEWS_CRON} (7h & 19h)`);
   console.log(`  Guide: ${config.GUIDE_CRON} (12h)`);
   console.log('');

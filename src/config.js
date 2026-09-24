@@ -1,12 +1,14 @@
 /**
  * Single source of truth for model selection, per-task budgets and schedules.
  *
- * Model choice (Aug 2026): the whole capability/cost Pareto frontier is held by
- * GPT-5.6 Luna effort levels — no GPT-5.4 configuration is the best choice at
- * any budget. So we run one model everywhere and use `effort` as the only dial.
- * The `gpt-5.6` alias routes to Sol, so the Luna id is spelled out explicitly.
+ * GPT-6 Luna matches GPT-5.6 Luna on overall intelligence at well under half
+ * the price and hallucinates less, but scores lower on human-read deliverables
+ * (AA-Briefcase, GDPval). So it runs the machine-read tasks, while published
+ * prose stays on GPT-5.6 Luna. The `gpt-5.6` alias routes to Sol, so the Luna
+ * id is spelled out explicitly.
  */
-const MODEL = 'gpt-5.6-luna';
+const WRITER_MODEL = 'gpt-5.6-luna';
+const WORKER_MODEL = 'gpt-6-luna';
 
 /**
  * Per-task profiles. `maxTokens` is a max_output_tokens cap that must cover
@@ -15,20 +17,19 @@ const MODEL = 'gpt-5.6-luna';
  */
 const TASKS = {
   // Web search injects ~8.6k input tokens per call: keep effort cheap here.
-  newsDiscovery: { effort: 'low', maxTokens: 8000, search: true },
+  newsDiscovery: { model: WORKER_MODEL, effort: 'low', maxTokens: 8000, search: true },
   // ~600-1200 French words + reasoning headroom.
-  article: { effort: 'high', maxTokens: 6000 },
+  article: { model: WRITER_MODEL, effort: 'high', maxTokens: 6000 },
   // Discover title is the #1 CTR lever — worth real reasoning budget.
-  articleMeta: { effort: 'high', maxTokens: 2000 },
+  articleMeta: { model: WRITER_MODEL, effort: 'high', maxTokens: 2000 },
   // ~1500-2000 French words + reasoning headroom.
-  guide: { effort: 'high', maxTokens: 9000 },
-  guideTopic: { effort: 'low', maxTokens: 1000 },
+  guide: { model: WRITER_MODEL, effort: 'high', maxTokens: 9000 },
+  guideTopic: { model: WORKER_MODEL, effort: 'low', maxTokens: 1000 },
   // Pure selection from a provided list: no reasoning needed.
-  imagePick: { effort: 'none', maxTokens: 100 },
+  imagePick: { model: WORKER_MODEL, effort: 'none', maxTokens: 100 },
 };
 
 module.exports = {
-  MODEL,
   TASKS,
 
   // Cron schedules
