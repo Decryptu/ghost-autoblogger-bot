@@ -22,9 +22,6 @@ Règles strictes :
 - Terminer par une mise en perspective concrète (conséquences mesurables, prochain jalon attendu).
 - Format markdown brut, aucun bloc de code.`;
 
-// One call, two independent deliverables: the Discover title and the Unsplash
-// keywords. Both read the same brief, so merging halves the input cost — but
-// the prompt states explicitly that neither answer constrains the other.
 const META_SYSTEM = `Tu produis DEUX livrables indépendants pour un article déjà rédigé : un titre Google Discover, et des mots-clés de recherche d'image. Chacun est jugé séparément, sur ses propres critères. La qualité de l'un ne doit jamais être sacrifiée pour l'autre.
 
 === LIVRABLE 1 — LE TITRE DISCOVER ===
@@ -84,13 +81,6 @@ const META_SCHEMA = {
   additionalProperties: false,
 };
 
-/**
- * Run the news article pipeline.
- * 1. Discover fresh AI-news candidates via web search.
- * 2. Pick the first unseen one and write the article.
- * 3. Derive the Discover title + image keywords from the finished article.
- * 4. Pick the most scroll-stopping image, publish to Ghost.
- */
 async function runNewsAgent() {
   console.log('\n=== News Agent: Starting ===');
 
@@ -123,13 +113,11 @@ Angle éditorial : ${candidate.angle || 'non précisé'}
 
 Faits à couvrir : ${candidate.summary}${sourcesLine}`;
 
-  // Article first — the title needs the real intro as context.
   const articleBody = await complete('article', {
     instructions: ARTICLE_SYSTEM,
     input: `${brief}\n\nRédige l'article en markdown brut, 600-1200 mots, selon les règles système.`,
   });
 
-  // First ~500 chars of the article, skipping empty lines and headings.
   const articleIntro = articleBody
     .split('\n')
     .map(l => l.trim())

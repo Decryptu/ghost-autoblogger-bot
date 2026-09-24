@@ -15,10 +15,6 @@ function getClient() {
   return unsplash;
 }
 
-/**
- * Search Unsplash and return up to `perPage` landscape candidates, falling
- * through generic queries before giving up.
- */
 async function searchCandidates(keywords, { perPage = 15 } = {}) {
   const client = getClient();
   const queries = [keywords, 'artificial intelligence', 'technology'].filter(Boolean);
@@ -38,7 +34,6 @@ async function searchCandidates(keywords, { perPage = 15 } = {}) {
   return [];
 }
 
-/** Simple search — returns a random photo URL. Used by guides. */
 async function searchImage(keywords) {
   const photos = await searchCandidates(keywords);
   if (photos.length === 0) {
@@ -67,10 +62,6 @@ const PICK_SCHEMA = {
   additionalProperties: false,
 };
 
-/**
- * Discover-style search: find candidates, then let the model pick the most
- * scroll-stopping one for the given title.
- */
 async function searchAndPickImageForDiscover(keywords, title) {
   const photos = await searchCandidates(keywords, { perPage: 20 });
   if (photos.length === 0) {

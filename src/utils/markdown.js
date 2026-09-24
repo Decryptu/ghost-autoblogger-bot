@@ -1,14 +1,7 @@
-/**
- * Minimal markdown → HTML converter for Ghost's `source: html` import.
- * Covers exactly what the prompts ask the models to emit: headings (h2-h6),
- * bullet and numbered lists, blockquotes, paragraphs, bold, italic and links.
- */
-
 const HEADING = /^(#{1,6})\s+(.+)$/;
 const BULLET = /^[-*+]\s+(.+)$/;
 const ORDERED = /^\d+[.)]\s+(.+)$/;
 
-/** Process inline markdown: links, then bold, then italic. */
 function processInline(text) {
   return text
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')

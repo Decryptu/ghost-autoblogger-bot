@@ -11,7 +11,6 @@ const { markdownToHtml } = require('../utils/markdown');
 
 const GUIDE_TAGS = ['guide', 'intelligence-artificielle'];
 
-// One call, two independent deliverables: the SEO topic and its image keywords.
 const TOPIC_SYSTEM = `Tu es rédacteur en chef SEO de Pandia, média tech français sur l'IA. Tu produis DEUX livrables indépendants : le sujet du guide à publier aujourd'hui, et les mots-clés de recherche d'image qui l'illustreront. Chacun est jugé sur ses propres critères.
 
 === LIVRABLE 1 — LE SUJET ===
@@ -69,18 +68,13 @@ Règles strictes :
 - NE JAMAIS utiliser "nous", "je", "révolution".
 - Format markdown brut, aucun bloc de code.`;
 
-/**
- * Run the guide article pipeline.
- * Picks a unique SEO-driven topic, generates an evergreen guide, publishes to Ghost.
- */
 async function runGuideAgent() {
   console.log('\n=== Guide Agent: Starting ===');
 
   const existingTitles = await fetchPostTitlesByTag('guide');
   console.log(`Found ${existingTitles.length} existing guides in Ghost`);
 
-  // Listed as plain bullets, never numbered: positional labels renumber the
-  // whole block whenever a guide is added, discarding the cached prefix.
+  // Never numbered: renumbering on each new guide would break the prompt cache prefix.
   const dedupContext = existingTitles.length
     ? `\n\nGUIDES DÉJÀ PUBLIÉS (choisis un sujet DIFFÉRENT de tous ceux-ci) :\n${existingTitles.map(t => `- ${t}`).join('\n')}`
     : '';

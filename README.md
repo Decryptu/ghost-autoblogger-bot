@@ -9,18 +9,21 @@ Both publish straight to Ghost with a featured Unsplash image, a random staff au
 
 ## Model strategy
 
-Everything runs on a single model, `gpt-5.6-luna`, with **reasoning effort as the only dial**. As of August 2026 the whole capability/cost Pareto frontier is held by Luna effort levels — no GPT-5.4 configuration is the best choice at any budget. The `gpt-5.6` alias routes to Sol, so the Luna id is spelled out.
+Two Luna models, split by who reads the output:
+
+- **`gpt-6-luna`** for machine-read tasks. Same intelligence as GPT-5.6 Luna at well under half the price, with fewer hallucinations.
+- **`gpt-5.6-luna`** for published prose. GPT-6 Luna scores lower on human-read deliverables (AA-Briefcase, GDPval). The `gpt-5.6` alias routes to Sol, so the Luna id is spelled out.
 
 Per-task profiles live in [`src/config.js`](src/config.js) — one place for model, effort and output caps:
 
-| Task | Effort | Why |
-|---|---|---|
-| `newsDiscovery` | `low` | Web search injects ~8.6k input tokens per call; keep the model cheap here. |
-| `article` | `high` | The product. |
-| `articleMeta` | `high` | The Discover title is the #1 CTR lever. |
-| `guide` | `high` | Long-form SEO. |
-| `guideTopic` | `low` | Pick a topic, avoid duplicates. |
-| `imagePick` | `none` | Selection from a supplied list. |
+| Task | Model | Effort | Why |
+|---|---|---|---|
+| `newsDiscovery` | `gpt-6-luna` | `low` | Web search injects ~8.6k input tokens per call; keep the model cheap here. |
+| `article` | `gpt-5.6-luna` | `high` | The product. |
+| `articleMeta` | `gpt-5.6-luna` | `high` | The Discover title is the #1 CTR lever. |
+| `guide` | `gpt-5.6-luna` | `high` | Long-form SEO. |
+| `guideTopic` | `gpt-6-luna` | `low` | Pick a topic, avoid duplicates. |
+| `imagePick` | `gpt-6-luna` | `none` | Selection from a supplied list. |
 
 Caps are `max_output_tokens` and must cover reasoning tokens *plus* the answer; they sit just above the real envelope so runaway responses surface instead of hiding.
 
@@ -74,7 +77,7 @@ Runs Biome (lint + format), TypeScript in `checkJs` mode, and the unit tests. No
 ```
 src/
 ├── index.js              # CLI + scheduler
-├── config.js             # model, per-task effort/caps, schedules
+├── config.js             # per-task model/effort/caps, schedules
 ├── agents/
 │   ├── newsAgent.js      # Discover pipeline
 │   └── guideAgent.js     # SEO pipeline

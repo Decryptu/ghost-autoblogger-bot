@@ -1,14 +1,3 @@
-/**
- * Tolerant JSON recovery for model output.
- *
- * Web-search calls cannot use structured outputs (JSON mode and the hosted
- * search tool are mutually exclusive), so their JSON has to be scanned out of
- * free text. Scanning must start at whichever opening bracket appears FIRST:
- * looking for `[` before `{` would silently pull the inner array out of
- * `{"items": [...]}` and return the wrong shape without erroring.
- */
-
-/** Strip a leading/trailing markdown code fence, if any. */
 function stripFence(text) {
   const trimmed = (text || '').trim();
   if (!trimmed.startsWith('```')) return trimmed;
@@ -18,10 +7,6 @@ function stripFence(text) {
     .trim();
 }
 
-/**
- * Parse the first balanced JSON value (object or array) found in `text`.
- * Returns null when nothing parseable is present.
- */
 function extractJson(text) {
   const source = stripFence(text);
 
@@ -30,6 +15,7 @@ function extractJson(text) {
   const candidates = [objectAt, arrayAt].filter(i => i !== -1);
   if (candidates.length === 0) return null;
 
+  // Earliest bracket wins, or `{"items": [...]}` would yield the inner array.
   const start = Math.min(...candidates);
   const open = source[start];
   const close = open === '{' ? '}' : ']';
@@ -68,10 +54,6 @@ function extractJson(text) {
   return null;
 }
 
-/**
- * Parse `text` as a JSON array. Accepts a bare array, or an object wrapping a
- * single array property (a shape models fall into on their own).
- */
 function extractJsonArray(text) {
   const parsed = extractJson(text);
   if (Array.isArray(parsed)) return parsed;
