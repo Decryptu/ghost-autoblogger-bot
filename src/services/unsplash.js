@@ -21,8 +21,11 @@ async function searchCandidates(keywords, { perPage = 15 } = {}) {
 
   for (const query of queries) {
     try {
-      const result = await client.search.getPhotos({ query, perPage, orientation: 'landscape' });
-      const photos = result.response?.results || [];
+      const { data, error } = await client.GET('/search/photos', {
+        params: { query: { query, per_page: perPage, orientation: 'landscape' } },
+      });
+      if (error) throw new Error(error.errors?.join(', ') || 'Unsplash API error');
+      const photos = data?.results || [];
       if (photos.length > 0) {
         console.log(`Unsplash returned ${photos.length} photos for "${query}"`);
         return photos;
