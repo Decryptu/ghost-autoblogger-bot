@@ -22,14 +22,14 @@
   "license": "ISC",
   "dependencies": {
     "@tryghost/admin-api": "^1.14.14",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.9",
     "node-cron": "^4.6.0",
-    "openai": "^7.43.0",
-    "unsplash-js": "^7.0.20"
+    "openai": "^7.47.0",
+    "unsplash-js": "^8.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.2",
-    "@types/node": "^26.6.5",
+    "@biomejs/biome": "^2.6.4",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }
 }
