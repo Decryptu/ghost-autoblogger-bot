@@ -21,14 +21,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tryghost/admin-api": "^1.14.14",
-    "dotenv": "^18.0.9",
+    "@tryghost/admin-api": "^1.14.16",
+    "dotenv": "^18.0.10",
     "node-cron": "^4.6.0",
-    "openai": "^7.47.0",
+    "openai": "^7.62.0",
     "unsplash-js": "^8.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
+    "@biomejs/biome": "^2.6.8",
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }
